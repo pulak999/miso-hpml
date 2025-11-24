@@ -138,11 +138,29 @@ chmod +x workloads/clear_memory.sh
 You need to modify `gpu_server.py` to remove MIG dependencies. The key changes are:
 
 **Around line 141-150** (mps_enable section):
+
+**REPLACE THIS:**
 ```python
-elif 'mps_enable' in data_str:
+elif 'mps_enable' in data_str: # mps_enable 0
     gpuid = int(re.findall(r'\d+', data_str)[0])
+    mig_helper.reset_mig(gpuid)
+    mig_helper.create_ins(gpuid, '7g.40gb')
     current_partition[gpuid] = '0'
-    device = str(gpuid)  # Direct GPU ID, no MIG
+    device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
+    cmd = f'./enable_mps_on_mig.sh {device}'
+    p = subprocess.Popen([cmd], shell=True)
+    p.wait()
+    print(f'enabled MPS on GPU {gpuid}')
+```
+
+**WITH THIS:**
+```python
+elif 'mps_enable' in data_str: # mps_enable 0
+    gpuid = int(re.findall(r'\d+', data_str)[0])
+    # REMOVED: mig_helper.reset_mig(gpuid)
+    # REMOVED: mig_helper.create_ins(gpuid, '7g.40gb')
+    current_partition[gpuid] = '0'
+    # REMOVED: device lookup from cuda_devices
     cmd = f'./enable_mps_simple.sh {gpuid}'
     p = subprocess.Popen([cmd], shell=True, cwd=f'/home/{user}/GIT/socc22-miso')
     p.wait()
@@ -150,31 +168,99 @@ elif 'mps_enable' in data_str:
 ```
 
 **Around line 102-120** (mps_strt section):
+
+**REPLACE THIS:**
 ```python
-elif 'mps_strt' in data_str:
+elif 'mps_strt' in data_str: # mps_strt 10 gpu 0 lvl 100
     jobid = re.findall(r'\d+', data_str)[0]
     gpuid = int(re.findall(r'\d+', data_str)[1])
     mps_lvl = re.findall(r'\d+', data_str)[2]
-    # Remove MIG check - just use direct GPU ID
-    device = str(gpuid)  # Direct GPU ID
+    if current_partition[gpuid] != '0':
+        raise RuntimeError('GPU must be in 7g.40gb to start MPS')
+    device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
     mapped_jobid = str(int(jobid) % 100)
     model = job_models[mapped_jobid].split('_')[0]
     batch = job_models[mapped_jobid].split('train')[1]
     iters = num_iters[mapped_jobid]
-    cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} --node {host_node} --partition {mps_lvl} --mps_set --cuda_device {device}'
-    # ... rest of the code
+    cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} \
+        --node {host_node} --partition {mps_lvl} --mps_set --cuda_device {device}'
+    print(f'starting job {jobid} at gpu {gpuid} for MPS')
+    
+    out_file = f'{log_dir}/job{jobid}_start.out'
+    err_file = f'{log_dir}/job{jobid}_start.err'
+    with open(out_file, 'w+') as out, open(err_file, 'w+') as err:
+        subprocess.Popen([cmd], shell=True, stdout=out, stderr=err)
+```
+
+**WITH THIS:**
+```python
+elif 'mps_strt' in data_str: # mps_strt 10 gpu 0 lvl 100
+    jobid = re.findall(r'\d+', data_str)[0]
+    gpuid = int(re.findall(r'\d+', data_str)[1])
+    mps_lvl = re.findall(r'\d+', data_str)[2]
+    # REMOVED: MIG partition check (lines 106-107)
+    device = str(gpuid)  # Direct GPU ID, no MIG lookup
+    mapped_jobid = str(int(jobid) % 100)
+    model = job_models[mapped_jobid].split('_')[0]
+    batch = job_models[mapped_jobid].split('train')[1]
+    iters = num_iters[mapped_jobid]
+    cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} \
+        --node {host_node} --partition {mps_lvl} --mps_set --cuda_device {device}'
+    print(f'starting job {jobid} at gpu {gpuid} for MPS')
+    
+    out_file = f'{log_dir}/job{jobid}_start.out'
+    err_file = f'{log_dir}/job{jobid}_start.err'
+    with open(out_file, 'w+') as out, open(err_file, 'w+') as err:
+        subprocess.Popen([cmd], shell=True, stdout=out, stderr=err)
 ```
 
 **Around line 121-140** (mps_rsm section):
+
+**REPLACE THIS:**
 ```python
-elif 'mps_rsm' in data_str:
+elif 'mps_rsm' in data_str: # mps_rsm 10 gpu 0 batch 500 lvl 100
     jobid = re.findall(r'\d+', data_str)[0]
     gpuid = int(re.findall(r'\d+', data_str)[1])
     resume_batch = int(re.findall(r'\d+', data_str)[2])
     mps_lvl = re.findall(r'\d+', data_str)[3]
-    # Remove MIG check - just use direct GPU ID
-    device = str(gpuid)  # Direct GPU ID
-    # ... rest of the code
+    if current_partition[gpuid] != '0':
+        raise RuntimeError('GPU must be in 7g.40gb to start MPS')
+    device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
+    mapped_jobid = str(int(jobid) % 100)
+    model = job_models[mapped_jobid].split('_')[0]
+    batch = job_models[mapped_jobid].split('train')[1]
+    iters = num_iters[mapped_jobid]
+    cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} \
+        --node {host_node} --partition {mps_lvl} --mps_set --resume --start_batch {resume_batch} --cuda_device {device}'
+    print(f'resuming job {jobid} at gpu {gpuid} for MPS')
+
+    out_file = f'{log_dir}/job{jobid}_resume.out'
+    err_file = f'{log_dir}/job{jobid}_resume.err'     
+    with open(out_file, 'w+') as out, open(err_file, 'w+') as err:
+        subprocess.Popen([cmd], shell=True, stdout=out, stderr=err)
+```
+
+**WITH THIS:**
+```python
+elif 'mps_rsm' in data_str: # mps_rsm 10 gpu 0 batch 500 lvl 100
+    jobid = re.findall(r'\d+', data_str)[0]
+    gpuid = int(re.findall(r'\d+', data_str)[1])
+    resume_batch = int(re.findall(r'\d+', data_str)[2])
+    mps_lvl = re.findall(r'\d+', data_str)[3]
+    # REMOVED: MIG partition check
+    device = str(gpuid)  # Direct GPU ID, no MIG lookup
+    mapped_jobid = str(int(jobid) % 100)
+    model = job_models[mapped_jobid].split('_')[0]
+    batch = job_models[mapped_jobid].split('train')[1]
+    iters = num_iters[mapped_jobid]
+    cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} \
+        --node {host_node} --partition {mps_lvl} --mps_set --resume --start_batch {resume_batch} --cuda_device {device}'
+    print(f'resuming job {jobid} at gpu {gpuid} for MPS')
+
+    out_file = f'{log_dir}/job{jobid}_resume.out'
+    err_file = f'{log_dir}/job{jobid}_resume.err'     
+    with open(out_file, 'w+') as out, open(err_file, 'w+') as err:
+        subprocess.Popen([cmd], shell=True, stdout=out, stderr=err)
 ```
 
 **Also remove MIG helper import** (around line 15):

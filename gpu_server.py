@@ -38,7 +38,16 @@ sock.listen(5)
 
 
 with open(f'/home/{user}/GIT/socc22-miso/mig_device_autogen.json') as f:
-    cuda_devices = json.load(f)[args.node]
+    mig_devices_dict = json.load(f)
+    # Try to get devices for the specified node, fallback to hostname if 'localhost' is used
+    if args.node in mig_devices_dict:
+        cuda_devices = mig_devices_dict[args.node]
+    elif args.node == 'localhost' and socket.gethostname() in mig_devices_dict:
+        # If localhost is used but not in file, try actual hostname
+        cuda_devices = mig_devices_dict[socket.gethostname()]
+        print(f'Note: Using hostname {socket.gethostname()} instead of localhost')
+    else:
+        raise KeyError(f'Node "{args.node}" not found in mig_device_autogen.json. Available nodes: {list(mig_devices_dict.keys())}')
 with open(f'/home/{user}/GIT/socc22-miso/mps/scheduler/simulator/job_models.json') as f:
     job_models = json.load(f)
 with open(f'/home/{user}/GIT/socc22-miso/workloads/num_iters.json') as f:
@@ -103,9 +112,8 @@ while True:
                     jobid = re.findall(r'\d+', data_str)[0]
                     gpuid = int(re.findall(r'\d+', data_str)[1])
                     mps_lvl = re.findall(r'\d+', data_str)[2]
-                    if current_partition[gpuid] != '0':
-                        raise RuntimeError('GPU must be in 7g.40gb to start MPS')
-                    device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
+                    # REMOVED: MIG partition check for MPS-only mode
+                    device = str(gpuid)  # Direct GPU ID, no MIG lookup
                     mapped_jobid = str(int(jobid) % 100)
                     model = job_models[mapped_jobid].split('_')[0]
                     batch = job_models[mapped_jobid].split('train')[1]
@@ -123,9 +131,8 @@ while True:
                     gpuid = int(re.findall(r'\d+', data_str)[1])
                     resume_batch = int(re.findall(r'\d+', data_str)[2])
                     mps_lvl = re.findall(r'\d+', data_str)[3]
-                    if current_partition[gpuid] != '0':
-                        raise RuntimeError('GPU must be in 7g.40gb to start MPS')
-                    device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
+                    # REMOVED: MIG partition check for MPS-only mode
+                    device = str(gpuid)  # Direct GPU ID, no MIG lookup
                     mapped_jobid = str(int(jobid) % 100)
                     model = job_models[mapped_jobid].split('_')[0]
                     batch = job_models[mapped_jobid].split('train')[1]
@@ -140,18 +147,20 @@ while True:
                         subprocess.Popen([cmd], shell=True, stdout=out, stderr=err)                                   
                 elif 'mps_enable' in data_str: # mps_enable 0
                     gpuid = int(re.findall(r'\d+', data_str)[0])
-                    mig_helper.reset_mig(gpuid)
-                    mig_helper.create_ins(gpuid, '7g.40gb')
+                    # REMOVED: MIG helper calls for MPS-only mode
+                    # mig_helper.reset_mig(gpuid)
+                    # mig_helper.create_ins(gpuid, '7g.40gb')
                     current_partition[gpuid] = '0'
-                    device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
-                    cmd = f'./enable_mps_on_mig.sh {device}'
-                    p = subprocess.Popen([cmd], shell=True)
+                    # REMOVED: MIG device lookup - use direct GPU ID
+                    cmd = f'./enable_mps_simple.sh {gpuid}'
+                    p = subprocess.Popen([cmd], shell=True, cwd=f'/home/{user}/GIT/socc22-miso')
                     p.wait()
                     print(f'enabled MPS on GPU {gpuid}')
                 elif 'mps_disable' in data_str: # mps_disable 0
                     gpuid = int(re.findall(r'\d+', data_str)[0])
-                    if current_partition[gpuid] != '0':
-                        raise RuntimeError('When disabling MPS, the MIG partition is not 7g.40gb')
+                    # REMOVED: MIG partition check for MPS-only mode
+                    # if current_partition[gpuid] != '0':
+                    #     raise RuntimeError('When disabling MPS, the MIG partition is not 7g.40gb')
                     cmd = f'nvidia-smi -i {gpuid} --query-compute-apps=pid,process_name --format=csv,noheader'
                     p = subprocess.Popen([cmd], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     out_p, err_p = p.communicate()
