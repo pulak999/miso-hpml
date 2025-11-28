@@ -52,12 +52,24 @@ cd ~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
 
 The scheduler only needs to send TCP commands - no GPU or CUDA required.
 
+**Note for Apple Silicon (M1/M2/M3) Macs**: Python 3.7 may not be available. Use Python 3.8 or 3.9 instead.
+
 ```bash
 # On macOS
 cd ~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
 
-# Create minimal conda environment (no CUDA needed)
+# Check available Python versions (especially important for Apple Silicon)
+conda search python | grep "^python\s"
+
+# Create minimal conda environment
+# For Intel Macs or if Python 3.7 is available:
 conda create -n miso_client python=3.7 -y
+
+# For Apple Silicon Macs (M1/M2/M3), use Python 3.8 or 3.9:
+# conda create -n miso_client python=3.8 -y
+# OR
+# conda create -n miso_client python=3.9 -y
+
 conda activate miso_client
 
 # Install only the Python dependencies needed for scheduling
@@ -75,33 +87,46 @@ conda activate tf2
 pip uninstall torch torchvision torchaudio cudatoolkit cudnn -y 2>/dev/null || true
 ```
 
-### 1.3 Fix Hardcoded Paths for macOS
+**Troubleshooting Python Version Issues:**
 
-The codebase has hardcoded Linux paths. We need to fix them for macOS.
+If you get `PackagesNotFoundError` for Python 3.7 on Apple Silicon:
 
-**Option A: Use the automated script**
+1. **Use Python 3.8 or 3.9** (recommended):
+   ```bash
+   conda create -n miso_client python=3.8 -y
+   # OR
+   conda create -n miso_client python=3.9 -y
+   ```
+
+2. **Use conda-forge channel** (may have more Python versions):
+   ```bash
+   conda create -n miso_client -c conda-forge python=3.7 -y
+   ```
+
+3. **Use pyenv** (if you specifically need Python 3.7):
+   ```bash
+   # Install pyenv first: brew install pyenv
+   pyenv install 3.7.17
+   pyenv local 3.7.17
+   python -m venv miso_client
+   source miso_client/bin/activate
+   ```
+
+### 1.3 Verify Path Configuration
+
+**✅ Good news!** The codebase already uses a configurable path system (`miso_config.py`), so no path fixing is needed. The files automatically detect the repository location.
+
+**Just verify it works:**
 
 ```bash
 # On macOS
 cd ~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
 conda activate miso_client  # or tf2
-
-# Run the path fix script
-python pulak/qna/mps/fix_paths_for_macos.py
 ```
 
-**Option B: Manual fix (if script doesn't work)**
+This should print your repository path. If it shows the correct path, you're all set!
 
-The script should handle most files automatically. If needed, verify that these files use relative paths instead of `/home/{user}/GIT/socc22-miso`:
-
-- `exp_mps.py`
-- `controller_helper.py`
-- `exp_full.py`
-- `exp_oracle.py`
-- `exp_static.py`
-- `exp_miso.py`
-- `export_cuda_device_auto.py`
-- `dummy/dummy_sender.py`
+**Note**: The `fix_paths_for_macos.py` script is no longer needed - all files already use `miso_config.py` for paths.
 
 ### 1.4 Set Repository Root Environment Variable
 
@@ -109,12 +134,24 @@ The script should handle most files automatically. If needed, verify that these 
 # On macOS
 export MISO_REPO_ROOT=~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
 
+# Test that the config system works
+python -c "from miso_config import REPO_ROOT; print(f'Repo root: {REPO_ROOT}')"
+
 # Add to ~/.zshrc or ~/.bash_profile for persistence
 echo 'export MISO_REPO_ROOT=~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-### 1.5 Create Run Script for macOS
+### 1.5 Create Run Script for macOS (Optional but Recommended)
+
+**Why this script?** The existing `run.py` has hardcoded physical node hostnames and doesn't support the `--mps_level` parameter or macOS client setup. This script provides:
+
+- ✅ Configurable GPU server hostname (critical for macOS → Ubuntu setup)
+- ✅ `--mps_level` parameter support
+- ✅ Better error messages for client/server configuration
+- ✅ Only runs MPS experiments (not all experiment types)
+
+**Alternative**: You could modify `run.py` directly, but this script is cleaner for the macOS client use case.
 
 Create `run_mps_only.py` in the repository root:
 
@@ -274,6 +311,12 @@ python -c "from miso_config import REPO_ROOT; print(f'Repo root: {REPO_ROOT}')"
 
 ### 2.5 Create Device Mapping Configuration
 
+**Why this file?** `gpu_server.py` **requires** `mig_device_autogen.json` at startup (line 43). It uses this file to:
+- Map hostnames to GPU configurations
+- Look up CUDA device IDs (though for MPS-only mode, we use simplified device IDs)
+
+Even though MPS-only mode doesn't use MIG partitions, the file structure is still needed. We create a simplified version that satisfies the requirement.
+
 ```bash
 # On Ubuntu
 cd ~/GIT/socc22-miso
@@ -311,68 +354,11 @@ cat mig_device_autogen.json
 }
 ```
 
-### 2.6 Create MPS Enable Script
+**Note**: The `enable_mps_simple.sh` script is already included in the repository. No need to create it manually.
 
-```bash
-# On Ubuntu
-cd ~/GIT/socc22-miso
+**Note**: The `disable_mps_simple.sh` script is already included in the repository. No need to create it manually.
 
-cat > enable_mps_simple.sh << 'EOF'
-#!/bin/bash
-
-# Enable MPS for a GPU without MIG
-# Usage: ./enable_mps_simple.sh <gpu_id>
-
-GPU_ID=$1
-
-# Set GPU to EXCLUSIVE_PROCESS mode
-sudo nvidia-smi -i $GPU_ID -c EXCLUSIVE_PROCESS
-
-# Create MPS directories
-mkdir -p /tmp/mps_log/nvidia-mps$GPU_ID
-mkdir -p /tmp/mps_log/nvidia-log$GPU_ID
-
-# Set environment variables
-export CUDA_VISIBLE_DEVICES=$GPU_ID
-export CUDA_MPS_PIPE_DIRECTORY=/tmp/mps_log/nvidia-mps$GPU_ID
-export CUDA_MPS_LOG_DIRECTORY=/tmp/mps_log/nvidia-log$GPU_ID
-
-# Start MPS daemon
-nvidia-cuda-mps-control -d
-
-echo "MPS enabled for GPU $GPU_ID"
-EOF
-
-chmod +x enable_mps_simple.sh
-```
-
-### 2.7 Create MPS Disable Script
-
-```bash
-# On Ubuntu
-cd ~/GIT/socc22-miso
-
-cat > disable_mps_simple.sh << 'EOF'
-#!/bin/bash
-
-# Disable MPS for a GPU
-# Usage: ./disable_mps_simple.sh <gpu_id>
-
-GPU_ID=$1
-
-# Quit MPS control
-echo quit | nvidia-cuda-mps-control
-
-# Reset GPU to default compute mode
-sudo nvidia-smi -i $GPU_ID -c DEFAULT
-
-echo "MPS disabled for GPU $GPU_ID"
-EOF
-
-chmod +x disable_mps_simple.sh
-```
-
-### 2.8 Verify gpu_server.py is MPS-Only Compatible
+### 2.7 Verify gpu_server.py is MPS-Only Compatible
 
 The `gpu_server.py` should already be modified for MPS-only mode. Verify these sections:
 
@@ -398,7 +384,7 @@ elif 'mps_enable' in data_str:
 
 If these are not correct, you may need to modify `gpu_server.py` manually (see `mps_quickstart.md` for exact changes).
 
-### 2.9 Prepare Workloads
+### 2.8 Prepare Workloads
 
 ```bash
 # On Ubuntu
@@ -440,7 +426,7 @@ chmod +x workloads/clear_memory.sh
 ./workloads/copy_memory.sh
 ```
 
-### 2.10 Configure Firewall
+### 2.9 Configure Firewall
 
 ```bash
 # On Ubuntu
@@ -454,7 +440,7 @@ sudo ufw allow 10002/tcp
 sudo ufw status
 ```
 
-### 2.11 Start GPU Server
+### 2.10 Start GPU Server
 
 **Option A: Using screen (Recommended)**
 
@@ -704,6 +690,16 @@ tail -100 logs/experiment_mps.log
   - Check firewall on Ubuntu: `sudo ufw status`
   - Test connectivity: `nc -zv <ubuntu-ip> 10002`
 
+**Issue**: "PackagesNotFoundError: python=3.7" on Apple Silicon (M1/M2/M3) Macs
+- **Solution**: 
+  - Python 3.7 is not available for ARM64. Use Python 3.8 or 3.9 instead:
+    ```bash
+    conda create -n miso_client python=3.8 -y
+    # OR
+    conda create -n miso_client python=3.9 -y
+    ```
+  - The scheduler code should work fine with Python 3.8 or 3.9
+
 **Issue**: "Module not found" errors
 - **Solution**: 
   - Verify conda environment is activated: `conda activate miso_client`
@@ -714,10 +710,11 @@ tail -100 logs/experiment_mps.log
   - This error should not occur on macOS (it's a GPU server issue)
   - Verify you're running the scheduler, not GPU server code
 
-**Issue**: Hardcoded path errors
+**Issue**: Path-related errors
 - **Solution**: 
-  - Run `python pulak/qna/mps/fix_paths_for_macos.py`
-  - Verify `MISO_REPO_ROOT` is set: `echo $MISO_REPO_ROOT`
+  - The codebase uses `miso_config.py` for paths - no manual fixing needed
+  - Verify `MISO_REPO_ROOT` is set (optional, auto-detects): `echo $MISO_REPO_ROOT`
+  - Test path detection: `python -c "from miso_config import REPO_ROOT; print(REPO_ROOT)"`
 
 ### Ubuntu GPU Server Issues
 
@@ -829,8 +826,8 @@ tail -f gpu_server.log
 - [ ] Repository cloned
 - [ ] Conda environment created (`miso_client`)
 - [ ] Dependencies installed
-- [ ] Paths fixed (using `fix_paths_for_macos.py`)
-- [ ] `MISO_REPO_ROOT` environment variable set
+- [ ] Path configuration verified (auto-detects, no fixing needed)
+- [ ] `MISO_REPO_ROOT` environment variable set (optional)
 - [ ] `run_mps_only.py` created
 - [ ] `GPU_SERVER_HOST` environment variable set
 - [ ] Network connectivity tested
