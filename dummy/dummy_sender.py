@@ -11,7 +11,10 @@ import socket
 import argparse
 import signal
 import sys
-sys.path.append(f'/home/{user}/GIT/socc22-miso/workloads/')
+
+# Import MISO config to get repository root
+from miso_config import REPO_ROOT, get_path
+sys.path.append(get_path('workloads'))
 from send_signal import send_signal
 
 

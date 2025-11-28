@@ -10,13 +10,16 @@ import argparse
 import math
 from pathlib import Path
 import sys
-sys.path.append(f'/home/{user}/GIT/socc22-miso/mps/scheduler/simulator/')
+
+# Import MISO config to get repository root
+from miso_config import REPO_ROOT, get_path
+sys.path.append(get_path('mps', 'scheduler', 'simulator'))
 from utils import *
 import copy
 from controller_helper import *
 import threading
 import _thread
-sys.path.append(f'/home/{user}/GIT/socc22-miso/workloads')
+sys.path.append(get_path('workloads'))
 from send_signal import send_signal
 import socket
 from threading import Event
@@ -28,7 +31,7 @@ class Experiment:
         # shared attributes across different scheduling policies
         random.seed(args.seed)
         np.random.seed(args.seed+1)
-        with open(f'/home/{user}/GIT/socc22-miso/mps/scheduler/trace/trace_100.json') as f:
+        with open(get_path('mps', 'scheduler', 'trace', 'trace_100.json')) as f:
             job_dict = json.load(f)
 
         self.job_runtime = {} # job information
@@ -98,7 +101,7 @@ class Experiment:
             self.ckpt_ovhd[j] = []
             self.ckpt_batch[j] = 0
     
-        with open(f'/home/{user}/GIT/socc22-miso/mps/scheduler/simulator/job_models.json') as f:
+        with open(get_path('mps', 'scheduler', 'simulator', 'job_models.json')) as f:
             job_models = json.load(f)
         # map job model to speedup (predicted and actual)
         self.perf_actual, self.perf_pred = get_speedup(job_models, args.error_mean, args.error_std)

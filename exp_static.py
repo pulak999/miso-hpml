@@ -10,14 +10,17 @@ import argparse
 import math
 from pathlib import Path
 import sys
-sys.path.append(f'/home/{user}/GIT/socc22-miso/mps/scheduler/simulator/')
+
+# Import MISO config to get repository root
+from miso_config import REPO_ROOT, get_path
+sys.path.append(get_path('mps', 'scheduler', 'simulator'))
 from utils import *
 import copy
 from controller_helper import *
 import threading
 import _thread
 from exp_full import Experiment
-sys.path.append(f'/home/{user}/GIT/socc22-miso/workloads')
+sys.path.append(get_path('workloads'))
 from send_signal import send_signal
 import socket
 from threading import Event

@@ -56,15 +56,17 @@ ls -la
 ## Step 3: Setup Python Environment
 
 ```bash
-# Create conda environment
-conda env create -f environment.yml
+# Create conda environment (use environment_mps.yml for MPS-only experiments)
+conda env create -f environment_mps.yml
 
 # Activate environment
-conda activate <env-name>  # Check environment.yml for name
+conda activate tf2  # Environment name is 'tf2'
 
 # Install any missing dependencies
 pip install -r requirements.txt  # If exists
 ```
+
+**Note**: Use `environment_mps.yml` (not `environment.yml`) for MPS-only experiments. The `environment_mps.yml` file is cleaner and doesn't have Linux-specific hardcoded packages. See `environment_setup_guide.md` for details.
 
 ## Step 4: Create MPS-Only Configuration Files
 

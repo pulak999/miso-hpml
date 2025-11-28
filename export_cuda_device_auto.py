@@ -3,7 +3,10 @@ import mig_helper
 import os
 user = os.environ.get('USER')
 import sys
-sys.path.append(f'/home/{user}/GIT/socc22-miso/mps/scheduler/simulator')
+
+# Import MISO config to get repository root
+from miso_config import REPO_ROOT, get_path
+sys.path.append(get_path('mps', 'scheduler', 'simulator'))
 from utils import *
 import subprocess
 import io
@@ -11,7 +14,7 @@ import numpy as np
 import socket
 
 node = socket.gethostname()
-with open(f'/home/{user}/GIT/socc22-miso/mps/scheduler/partition_code.json') as f:
+with open(get_path('mps', 'scheduler', 'partition_code.json')) as f:
     partition_code = json.load(f)
     if os.path.exists('mig_device_autogen.json'):
         with open('mig_device_autogen.json') as f:

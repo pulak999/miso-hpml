@@ -6,7 +6,10 @@ import re
 import json
 import os
 user = os.environ.get('USER')
-sys.path.append(f'/home/{user}/GIT/socc22-miso/mps/scheduler/simulator/')
+
+# Import MISO config to get repository root
+from miso_config import REPO_ROOT, get_path
+sys.path.append(get_path('mps', 'scheduler', 'simulator'))
 from utils import *
 import argparse
 import psutil
@@ -15,7 +18,7 @@ import datetime
 import mig_helper
 import signal
 from pathlib import Path
-os.chdir('workloads')
+os.chdir(get_path('workloads'))
 
 parser = argparse.ArgumentParser(description='TCP server')
 parser.add_argument('--node', metavar='GPU_NODE', type=str, help='specific which node', default=socket.gethostname())
@@ -37,7 +40,7 @@ sock.bind(server_address)
 sock.listen(5)
 
 
-with open(f'/home/{user}/GIT/socc22-miso/mig_device_autogen.json') as f:
+with open(get_path('mig_device_autogen.json')) as f:
     mig_devices_dict = json.load(f)
     # Try to get devices for the specified node, fallback to hostname if 'localhost' is used
     if args.node in mig_devices_dict:
@@ -48,11 +51,11 @@ with open(f'/home/{user}/GIT/socc22-miso/mig_device_autogen.json') as f:
         print(f'Note: Using hostname {socket.gethostname()} instead of localhost')
     else:
         raise KeyError(f'Node "{args.node}" not found in mig_device_autogen.json. Available nodes: {list(mig_devices_dict.keys())}')
-with open(f'/home/{user}/GIT/socc22-miso/mps/scheduler/simulator/job_models.json') as f:
+with open(get_path('mps', 'scheduler', 'simulator', 'job_models.json')) as f:
     job_models = json.load(f)
-with open(f'/home/{user}/GIT/socc22-miso/workloads/num_iters.json') as f:
+with open(get_path('workloads', 'num_iters.json')) as f:
     num_iters = json.load(f)
-with open(f'/home/{user}/GIT/socc22-miso/mps/scheduler/partition_code.json') as f:
+with open(get_path('mps', 'scheduler', 'partition_code.json')) as f:
     partition_code = json.load(f)
 
 run_pid_dict = {}
@@ -153,7 +156,7 @@ while True:
                     current_partition[gpuid] = '0'
                     # REMOVED: MIG device lookup - use direct GPU ID
                     cmd = f'./enable_mps_simple.sh {gpuid}'
-                    p = subprocess.Popen([cmd], shell=True, cwd=f'/home/{user}/GIT/socc22-miso')
+                    p = subprocess.Popen([cmd], shell=True, cwd=REPO_ROOT)
                     p.wait()
                     print(f'enabled MPS on GPU {gpuid}')
                 elif 'mps_disable' in data_str: # mps_disable 0
