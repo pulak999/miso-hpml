@@ -2,17 +2,25 @@
 
 This guide provides a complete plan for running MPS (Multi-Process Service) experiments on an AWS L4 instance via SSH. This setup assumes **CUDA MPS only** (no MIG support).
 
+**✅ Ubuntu Compatibility**: This setup is fully compatible with Ubuntu. All commands, paths, and scripts are designed for Linux/Ubuntu systems.
+
 ## Prerequisites Checklist
 
 Before starting, ensure you have:
 
-- [ ] AWS L4 instance running (g4dn.xlarge or larger)
+- [ ] **Ubuntu machine** (18.04, 20.04, 22.04, or later) - ✅ This setup works on Ubuntu
+- [ ] AWS L4 instance running (g4dn.xlarge or larger) OR any Ubuntu machine with NVIDIA GPU
 - [ ] SSH access to the instance
 - [ ] Sudo/root access for GPU configuration
 - [ ] NVIDIA drivers installed (check with `nvidia-smi`)
 - [ ] CUDA toolkit installed
 - [ ] Python 3.x and conda/miniconda installed
 - [ ] Port 10002 available for TCP communication
+
+**Ubuntu-Specific Notes**:
+- All commands in this guide are Ubuntu/Linux compatible
+- The repository must be located at `/home/${USER}/GIT/socc22-miso` (where `${USER}` is your Ubuntu username)
+- Standard Ubuntu utilities (`screen`, `tmux`, `bash`) are used throughout
 
 ## Step 1: Initial SSH Setup
 
@@ -192,12 +200,20 @@ Also update device references in `mps_strt` and `mps_rsm`:
 # The repository expects workloads in shared memory or specific location
 
 # Create scratch directory
+# Note: /scratch may not exist on Ubuntu by default - create it or use alternative location
 mkdir -p /scratch/$USER/miso_logs
+# Alternative: Use /tmp if /scratch doesn't exist
+# mkdir -p /tmp/$USER/miso_logs
+
 mkdir -p /tmp/mps_log
 
 # If you have workload data, copy it:
 # ./workloads/copy_memory.sh  # Modify paths if needed
 ```
+
+**Ubuntu Note**: The `/scratch` directory may not exist on standard Ubuntu installations. You can either:
+- Create it: `sudo mkdir -p /scratch && sudo chown -R $USER:$USER /scratch`
+- Or modify the codebase to use `/tmp` or another location (search for `/scratch/${USER}` in the codebase)
 
 ## Step 7: Create MPS-Only Run Script
 
