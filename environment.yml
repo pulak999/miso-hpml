@@ -56,7 +56,6 @@ dependencies:
   - setuptools=52.0.0=py37h06a4308_0
   - sqlite=3.36.0=hc218d9a_0
   - tk=8.6.10=hbc83047_0
-  - tkdiff=4.2=1
   - torchaudio=0.10.0=py37_cu113
   - torchvision=0.11.1=py37_cu113
   - wheel=0.37.0=pyhd3eb1b0_0

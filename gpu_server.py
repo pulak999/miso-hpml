@@ -103,9 +103,10 @@ while True:
                     jobid = re.findall(r'\d+', data_str)[0]
                     gpuid = int(re.findall(r'\d+', data_str)[1])
                     mps_lvl = re.findall(r'\d+', data_str)[2]
-                    if current_partition[gpuid] != '0':
-                        raise RuntimeError('GPU must be in 7g.40gb to start MPS')
-                    device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
+                    #if current_partition[gpuid] != '0':
+                    #    raise RuntimeError('GPU must be in 7g.40gb to start MPS')
+                    #device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
+                    device = str(gpuid)
                     mapped_jobid = str(int(jobid) % 100)
                     model = job_models[mapped_jobid].split('_')[0]
                     batch = job_models[mapped_jobid].split('train')[1]
@@ -123,9 +124,10 @@ while True:
                     gpuid = int(re.findall(r'\d+', data_str)[1])
                     resume_batch = int(re.findall(r'\d+', data_str)[2])
                     mps_lvl = re.findall(r'\d+', data_str)[3]
-                    if current_partition[gpuid] != '0':
-                        raise RuntimeError('GPU must be in 7g.40gb to start MPS')
-                    device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
+                    #if current_partition[gpuid] != '0':
+                    #    raise RuntimeError('GPU must be in 7g.40gb to start MPS')
+                    #device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
+                    device = str(gpuid)
                     mapped_jobid = str(int(jobid) % 100)
                     model = job_models[mapped_jobid].split('_')[0]
                     batch = job_models[mapped_jobid].split('train')[1]
@@ -140,18 +142,19 @@ while True:
                         subprocess.Popen([cmd], shell=True, stdout=out, stderr=err)                                   
                 elif 'mps_enable' in data_str: # mps_enable 0
                     gpuid = int(re.findall(r'\d+', data_str)[0])
-                    mig_helper.reset_mig(gpuid)
-                    mig_helper.create_ins(gpuid, '7g.40gb')
+                    #mig_helper.reset_mig(gpuid)
+                    #mig_helper.create_ins(gpuid, '7g.40gb')
                     current_partition[gpuid] = '0'
-                    device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
-                    cmd = f'./enable_mps_on_mig.sh {device}'
-                    p = subprocess.Popen([cmd], shell=True)
+                    #device = cuda_devices[f'gpu{gpuid}'][current_partition[gpuid]][0]
+                    cmd = f'./enable_mps_on_mig.sh {gpuid}'
+                    #p = subprocess.Popen([cmd], shell=True)
+                    p = subprocess.Popen([cmd], shell=True, cwd=f'/home/{user}/GIT/socc22-miso')
                     p.wait()
                     print(f'enabled MPS on GPU {gpuid}')
                 elif 'mps_disable' in data_str: # mps_disable 0
                     gpuid = int(re.findall(r'\d+', data_str)[0])
-                    if current_partition[gpuid] != '0':
-                        raise RuntimeError('When disabling MPS, the MIG partition is not 7g.40gb')
+                    #if current_partition[gpuid] != '0':
+                    #    raise RuntimeError('When disabling MPS, the MIG partition is not 7g.40gb')
                     cmd = f'nvidia-smi -i {gpuid} --query-compute-apps=pid,process_name --format=csv,noheader'
                     p = subprocess.Popen([cmd], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     out_p, err_p = p.communicate()
