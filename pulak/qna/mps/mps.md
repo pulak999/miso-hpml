@@ -299,7 +299,7 @@ nvidia-smi
 
 ```bash
 # On Ubuntu
-export MISO_REPO_ROOT=/home/$USER/GIT/socc22-miso
+export MISO_REPO_ROOT=<absolute_path>
 
 # Add to ~/.bashrc for persistence
 echo 'export MISO_REPO_ROOT=/home/$USER/GIT/socc22-miso' >> ~/.bashrc
