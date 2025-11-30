@@ -5,15 +5,19 @@ This guide provides step-by-step instructions for running MPS (Multi-Process Ser
 ## Architecture Overview
 
 ```
-┌─────────────────┐         TCP/IP          ┌──────────────────┐
-│   macOS Client  │  ←──────────────────→   │  Ubuntu GPU      │
-│   (Scheduler)   │   Port 10002            │  Server          │
-│                 │                          │  (Experiments)   │
-│ - Runs exp_mps  │                          │ - Runs gpu_server│
-│ - Sends commands│                          │ - Executes jobs  │
-│ - No GPU needed │                          │ - Has GPUs       │
-└─────────────────┘                          └──────────────────┘
+┌─────────────────┐    SSH Tunnel          ┌──────────────────┐
+│   macOS Client  │  localhost:10003 ────→ │  Ubuntu GPU      │
+│   (Scheduler)   │  (via SSH)             │  Server          │
+│                 │                         │  172.31.40.254   │
+│ - Runs exp_mps  │                         │  :10002          │
+│ - Sends commands│                         │                  │
+│ - Listens on    │                         │ - Runs gpu_server│
+│   port 10002    │                         │ - Executes jobs  │
+│ - No GPU needed │                         │ - Has GPUs       │
+└─────────────────┘                         └──────────────────┘
 ```
+
+**Note**: For private IP addresses (like AWS EC2), an SSH tunnel is required. The tunnel forwards `localhost:10003` on macOS to `172.31.40.254:10002` on the remote server. The experiment's listener thread uses port 10002 on macOS, so we use port 10003 for the tunnel to avoid conflicts.
 
 ---
 
@@ -507,9 +511,207 @@ netstat -tuln | grep 10002
 
 ---
 
-## Step 3: Run MPS Experiments
+## Step 3: Set Up SSH Tunnels (Required for Private IPs)
 
-### 3.1 On macOS: Set GPU Server Hostname
+**Why is this needed?** If your Ubuntu GPU server is on a private network (like AWS EC2 with a private IP), you cannot connect directly from macOS. You need **two SSH tunnels**:
+
+1. **Forward tunnel**: macOS → Ubuntu (for sending commands to GPU server)
+2. **Reverse tunnel**: Ubuntu → macOS (for workloads to send progress updates back to scheduler)
+
+### 3.1 Quick Setup (Recommended)
+
+**Use the automated script** (handles both tunnels and port conflicts):
+
+```bash
+# On macOS
+cd ~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
+
+# Set your SSH host (if different from 'l4vm')
+export SSH_HOST=l4vm  # or your SSH host alias
+export REMOTE_IP=172.31.40.254  # Get from: ssh $SSH_HOST "hostname -I"
+
+# Run the setup script
+./setup_ssh_tunnels.sh setup
+
+# Check status
+./setup_ssh_tunnels.sh status
+
+# Test connections
+./setup_ssh_tunnels.sh test
+```
+
+**The script will:**
+- ✅ Kill any existing tunnels
+- ✅ Set up forward tunnel (port 10003 → remote:10002)
+- ✅ Set up reverse tunnel (remote:10002 → localhost:10002)
+- ✅ Verify ports are correct
+- ✅ Test connections
+
+**Other commands:**
+```bash
+./setup_ssh_tunnels.sh status  # Check tunnel status
+./setup_ssh_tunnels.sh kill    # Kill all tunnels
+./setup_ssh_tunnels.sh test    # Test tunnel connections
+```
+
+### 3.2 Manual Setup (Alternative)
+
+If you prefer to set up tunnels manually:
+
+**Step 1: Forward Tunnel (Commands → GPU Server)**
+
+```bash
+# On macOS
+# Kill any existing tunnels
+lsof -i :10003 | grep ssh | awk '{print $2}' | xargs kill 2>/dev/null || true
+
+# Set up forward tunnel: localhost:10003 → remote:10002
+# Replace 'l4vm' with your SSH host alias
+ssh -f -N -L 10003:172.31.40.254:10002 l4vm
+
+# Verify
+lsof -i :10003 | grep ssh
+nc -zv localhost 10003
+```
+
+**Step 2: Reverse Tunnel (Workloads → Scheduler)**
+
+```bash
+# On macOS
+# Set up reverse tunnel: remote:10002 → localhost:10002
+# This allows workloads on Ubuntu to send progress updates to macOS scheduler
+ssh -f -N -R 10002:localhost:10002 l4vm
+
+# Verify (check SSH process)
+ps aux | grep "ssh.*-R.*10002" | grep -v grep
+```
+
+**What these tunnels do:**
+- **Forward tunnel (`-L`)**: 
+  - macOS `localhost:10003` → Ubuntu `172.31.40.254:10002`
+  - Used by scheduler to send commands to GPU server
+- **Reverse tunnel (`-R`)**:
+  - Ubuntu `localhost:10002` → macOS `localhost:10002`
+  - Used by workloads to send progress updates back to scheduler
+
+**Important Notes:**
+- Port 10002 on macOS is used by the scheduler's listener thread
+- Port 10003 on macOS is used for the forward tunnel (to avoid conflict)
+- Port 10002 on Ubuntu is used by GPU server and reverse tunnel endpoint
+- The reverse tunnel requires the scheduler to be listening on macOS port 10002
+
+**For different SSH configurations:**
+
+```bash
+# If using SSH key file:
+ssh -f -N -L 10003:172.31.40.254:10002 -i ~/.ssh/your-key.pem ubuntu@your-instance-ip
+ssh -f -N -R 10002:localhost:10002 -i ~/.ssh/your-key.pem ubuntu@your-instance-ip
+
+# If using SSH config host:
+ssh -f -N -L 10003:172.31.40.254:10002 your-ssh-host-alias
+ssh -f -N -R 10002:localhost:10002 your-ssh-host-alias
+```
+
+### 3.3 Verify Tunnels and Ports
+
+**Using the script:**
+```bash
+./setup_ssh_tunnels.sh status
+./setup_ssh_tunnels.sh test
+```
+
+**Manual verification:**
+```bash
+# On macOS
+# Check forward tunnel
+ps aux | grep "ssh.*-L.*10003" | grep -v grep
+lsof -i :10003
+
+# Check reverse tunnel
+ps aux | grep "ssh.*-R.*10002" | grep -v grep
+
+# Verify port 10002 status (for scheduler listener)
+lsof -i :10002 || echo "Port 10002 is free (ready for scheduler)"
+
+# Test forward tunnel connection
+nc -zv localhost 10003
+# Should output: "Connection to localhost port 10003 [tcp/*] succeeded!"
+
+# Test reverse tunnel (from Ubuntu server)
+ssh l4vm "nc -zv localhost 10002"
+# Should connect to macOS scheduler through reverse tunnel
+```
+
+### 3.4 Troubleshooting SSH Tunnels
+
+**Issue**: "bind [127.0.0.1]:10003: Address already in use"
+- **Solution**: 
+  - Use the script: `./setup_ssh_tunnels.sh kill` then `./setup_ssh_tunnels.sh setup`
+  - Or manually: `lsof -i :10003 | grep ssh | awk '{print $2}' | xargs kill`
+
+**Issue**: "bind [127.0.0.1]:10002: Address already in use" (reverse tunnel)
+- **Solution**: 
+  - If scheduler is running, this is normal (port 10002 is in use by scheduler)
+  - If scheduler is not running, kill the reverse tunnel: `pkill -f "ssh.*-R.*10002"`
+  - Then restart: `./setup_ssh_tunnels.sh setup`
+
+**Issue**: "Connection refused" when testing forward tunnel
+- **Solution**: 
+  - Verify GPU server is running on remote: `ssh l4vm "ps aux | grep gpu_server"`
+  - Check remote server is listening: `ssh l4vm "netstat -tuln | grep 10002"`
+  - Verify SSH tunnel process: `ps aux | grep "ssh.*-L.*10003"`
+
+**Issue**: Reverse tunnel not working (workloads can't send progress)
+- **Solution**:
+  - Check reverse tunnel is active: `ps aux | grep "ssh.*-R.*10002"`
+  - Verify scheduler is listening: `lsof -i :10002` (should show Python process)
+  - Test from Ubuntu: `ssh l4vm "nc -zv localhost 10002"`
+  - Some SSH servers require `GatewayPorts yes` in `/etc/ssh/sshd_config` (on Ubuntu)
+
+**Issue**: Tunnel dies after SSH session ends
+- **Solution**: 
+  - Use `-f` flag (runs in background) - the script does this automatically
+  - Or use `screen`/`tmux` to keep SSH session alive
+  - Consider using `autossh` for persistent tunnels: `brew install autossh`
+
+**Issue**: "Name or service not known" error in workload logs
+- **Solution**: 
+  - This means workloads can't reach the scheduler
+  - Verify reverse tunnel is set up: `./setup_ssh_tunnels.sh status`
+  - Restart reverse tunnel: `./setup_ssh_tunnels.sh kill && ./setup_ssh_tunnels.sh setup`
+
+**Note**: If you're on the same network as the GPU server (or it has a public IP), you can skip the SSH tunnels and connect directly. However, for AWS EC2 instances with private IPs, both tunnels are required.
+
+---
+
+## Step 4: Run MPS Experiments
+
+### 4.1 On macOS: Set GPU Server Hostname
+
+**When using SSH tunnel** (recommended for private IPs):
+```bash
+# On macOS
+cd ~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
+conda activate miso_client  # or tf2
+
+# Use localhost when using SSH tunnel
+export GPU_SERVER_HOST=localhost
+# The script defaults to port 10003 (SSH tunnel port)
+
+# Add to ~/.zshrc for persistence
+echo 'export GPU_SERVER_HOST=localhost' >> ~/.zshrc
+```
+
+**When connecting directly** (same network or public IP):
+```bash
+# On macOS
+export GPU_SERVER_HOST=<ubuntu-hostname-or-ip>
+# Example: export GPU_SERVER_HOST=192.168.1.100
+# Or: export GPU_SERVER_HOST=my-ubuntu-server
+
+# Add to ~/.zshrc for persistence
+echo 'export GPU_SERVER_HOST=<ubuntu-hostname-or-ip>' >> ~/.zshrc
+```
 
 ```bash
 # On macOS
@@ -525,8 +727,18 @@ export GPU_SERVER_HOST=<ubuntu-hostname-or-ip>
 echo 'export GPU_SERVER_HOST=<ubuntu-hostname-or-ip>' >> ~/.zshrc
 ```
 
-### 3.2 Test Connection
+### 4.2 Test Connection
 
+**When using SSH tunnel:**
+```bash
+# On macOS
+# Test connection through SSH tunnel
+nc -zv localhost 10003
+
+# If connection succeeds, you're ready to run experiments!
+```
+
+**When connecting directly:**
 ```bash
 # On macOS
 # Test TCP connection to GPU server
@@ -535,8 +747,26 @@ nc -zv $GPU_SERVER_HOST 10002
 # If connection succeeds, you're ready to run experiments!
 ```
 
-### 3.3 Run Small Test Experiment
+### 4.3 Run Small Test Experiment
 
+**When using SSH tunnel:**
+```bash
+# On macOS
+cd ~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
+conda activate miso_client  # or tf2
+
+# Run small test with 5 jobs (uses localhost and port 10003 by default)
+python3 run_mps_only.py \
+    --arrival 100 \
+    --num_gpu 1 \
+    --num_job 5 \
+    --random_trace \
+    --seed 42 \
+    --mps_level 33 \
+    --gpu_server_host localhost
+```
+
+**When connecting directly:**
 ```bash
 # On macOS
 cd ~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
@@ -550,10 +780,11 @@ python run_mps_only.py \
     --random_trace \
     --seed 42 \
     --mps_level 33 \
-    --gpu_server_host $GPU_SERVER_HOST
+    --gpu_server_host $GPU_SERVER_HOST \
+    --gpu_server_port 10002
 ```
 
-### 3.4 Monitor Progress
+### 4.4 Monitor Progress
 
 **On macOS (Client):**
 ```bash
@@ -584,10 +815,28 @@ tail -f ~/GIT/socc22-miso/gpu_server.log
 # Or if using screen/tmux, attach to session and view output
 ```
 
-### 3.5 Run Full Experiment
+### 4.5 Run Full Experiment
 
 Once the test works, run the full experiment:
 
+**When using SSH tunnel:**
+```bash
+# On macOS
+cd ~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
+conda activate miso_client  # or tf2
+
+# Run full experiment (uses localhost and port 10003 by default)
+python run_mps_only.py \
+    --arrival 100 \
+    --num_gpu 1 \
+    --num_job 30 \
+    --random_trace \
+    --seed 42 \
+    --mps_level 33 \
+    --gpu_server_host localhost
+```
+
+**When connecting directly:**
 ```bash
 # On macOS
 cd ~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso
@@ -601,11 +850,13 @@ python run_mps_only.py \
     --random_trace \
     --seed 42 \
     --mps_level 33 \
-    --gpu_server_host $GPU_SERVER_HOST
+    --gpu_server_host $GPU_SERVER_HOST \
+    --gpu_server_port 10002
 ```
 
-### 3.6 Run Experiments with Different MPS Levels
+### 4.6 Run Experiments with Different MPS Levels
 
+**When using SSH tunnel:**
 ```bash
 # On macOS
 # Test different MPS thread percentages
@@ -618,7 +869,7 @@ python run_mps_only.py \
     --random_trace \
     --seed 42 \
     --mps_level 33 \
-    --gpu_server_host $GPU_SERVER_HOST
+    --gpu_server_host localhost
 
 # MPS Level 50 (50% threads)
 python run_mps_only.py \
@@ -628,7 +879,7 @@ python run_mps_only.py \
     --random_trace \
     --seed 42 \
     --mps_level 50 \
-    --gpu_server_host $GPU_SERVER_HOST
+    --gpu_server_host localhost
 
 # MPS Level 14 (14% threads)
 python run_mps_only.py \
@@ -638,14 +889,53 @@ python run_mps_only.py \
     --random_trace \
     --seed 42 \
     --mps_level 14 \
-    --gpu_server_host $GPU_SERVER_HOST
+    --gpu_server_host localhost
+```
+
+**When connecting directly:**
+```bash
+# On macOS
+# Test different MPS thread percentages
+
+# MPS Level 33 (33% threads)
+python run_mps_only.py \
+    --arrival 100 \
+    --num_gpu 1 \
+    --num_job 30 \
+    --random_trace \
+    --seed 42 \
+    --mps_level 33 \
+    --gpu_server_host $GPU_SERVER_HOST \
+    --gpu_server_port 10002
+
+# MPS Level 50 (50% threads)
+python run_mps_only.py \
+    --arrival 100 \
+    --num_gpu 1 \
+    --num_job 30 \
+    --random_trace \
+    --seed 42 \
+    --mps_level 50 \
+    --gpu_server_host $GPU_SERVER_HOST \
+    --gpu_server_port 10002
+
+# MPS Level 14 (14% threads)
+python run_mps_only.py \
+    --arrival 100 \
+    --num_gpu 1 \
+    --num_job 30 \
+    --random_trace \
+    --seed 42 \
+    --mps_level 14 \
+    --gpu_server_host $GPU_SERVER_HOST \
+    --gpu_server_port 10002
 ```
 
 ---
 
-## Step 4: Results and Analysis
+## Step 5: Results and Analysis
 
-### 4.1 Results Location
+### 5.1 Results Location
 
 After completion, find results on **macOS** (where scheduler runs):
 
@@ -667,7 +957,7 @@ ls -la logs/mps/
 # - logs/experiment_mps.log - Full experiment log
 ```
 
-### 4.2 View Results
+### 5.2 View Results
 
 ```bash
 # On macOS
@@ -684,11 +974,28 @@ tail -100 logs/experiment_mps.log
 
 ### macOS Client Issues
 
-**Issue**: "Connection refused" on port 10002
+**Issue**: "Connection refused" on port 10002 or 10003
 - **Solution**: 
-  - Verify GPU server is running on Ubuntu: `ps aux | grep gpu_server`
+  - If using SSH tunnel: Verify tunnel is running: `ps aux | grep "ssh.*10003"`
+  - If connecting directly: Verify GPU server is running on Ubuntu: `ps aux | grep gpu_server`
   - Check firewall on Ubuntu: `sudo ufw status`
-  - Test connectivity: `nc -zv <ubuntu-ip> 10002`
+  - Test connectivity: `nc -zv localhost 10003` (tunnel) or `nc -zv <ubuntu-ip> 10002` (direct)
+
+**Issue**: "Address already in use" error when starting experiment
+- **Solution**: 
+  - Port 10002 is needed for the listener thread. Kill any processes using it:
+    ```bash
+    lsof -i :10002 | grep -v "COMMAND" | awk '{print $2}' | xargs kill 2>/dev/null || true
+    ```
+  - If using SSH tunnel, make sure it's on port 10003, not 10002
+  - Verify ports: `lsof -i :10002` (should be empty) and `lsof -i :10003` (should show SSH tunnel)
+
+**Issue**: "TimeoutError: Operation timed out" when connecting
+- **Solution**:
+  - If using private IP: Set up SSH tunnel first (see Step 3)
+  - Use `localhost` as GPU server host when using SSH tunnel
+  - Verify SSH tunnel: `nc -zv localhost 10003`
+  - Check GPU server is running: `ssh l4vm "ps aux | grep gpu_server"`
 
 **Issue**: "PackagesNotFoundError: python=3.7" on Apple Silicon (M1/M2/M3) Macs
 - **Solution**: 
@@ -767,8 +1074,16 @@ tail -100 logs/experiment_mps.log
 
 **Issue**: Hostname resolution fails
 - **Solution**:
-  - Use IP address instead of hostname: `export GPU_SERVER_HOST=<ip-address>`
+  - If using SSH tunnel: Use `localhost` instead of IP/hostname
+  - If connecting directly: Use IP address instead of hostname: `export GPU_SERVER_HOST=<ip-address>`
   - Or add to `/etc/hosts` on macOS: `sudo nano /etc/hosts` and add `<ubuntu-ip> <ubuntu-hostname>`
+
+**Issue**: SSH tunnel dies or connection lost
+- **Solution**:
+  - Re-establish tunnel: `ssh -f -N -L 10003:172.31.40.254:10002 l4vm`
+  - Check tunnel is running: `ps aux | grep "ssh.*10003"`
+  - Use `screen` or `tmux` to keep SSH session alive if needed
+  - Consider using autossh for persistent tunnels: `brew install autossh && autossh -M 20000 -f -N -L 10003:172.31.40.254:10002 l4vm`
 
 ---
 
@@ -780,10 +1095,16 @@ tail -100 logs/experiment_mps.log
 # Activate environment
 conda activate miso_client
 
-# Set GPU server hostname
-export GPU_SERVER_HOST=<ubuntu-hostname-or-ip>
+# Set up SSH tunnels (if using private IP)
+./setup_ssh_tunnels.sh setup
+# OR manually:
+# ssh -f -N -L 10003:172.31.40.254:10002 l4vm  # Forward tunnel
+# ssh -f -N -R 10002:localhost:10002 l4vm        # Reverse tunnel
 
-# Run experiment
+# Set GPU server hostname (use localhost with SSH tunnel)
+export GPU_SERVER_HOST=localhost
+
+# Run experiment (uses port 10003 by default with SSH tunnel)
 python run_mps_only.py \
     --arrival 100 \
     --num_gpu 1 \
@@ -791,7 +1112,7 @@ python run_mps_only.py \
     --random_trace \
     --seed 42 \
     --mps_level 33 \
-    --gpu_server_host $GPU_SERVER_HOST
+    --gpu_server_host localhost
 
 # Monitor logs
 tail -f logs/experiment_mps.log
@@ -829,7 +1150,10 @@ tail -f gpu_server.log
 - [ ] Path configuration verified (auto-detects, no fixing needed)
 - [ ] `MISO_REPO_ROOT` environment variable set (optional)
 - [ ] `run_mps_only.py` created
-- [ ] `GPU_SERVER_HOST` environment variable set
+- [ ] SSH tunnels set up (forward + reverse) if using private IP
+  - [ ] Forward tunnel: `./setup_ssh_tunnels.sh setup` or manual setup
+  - [ ] Reverse tunnel: Included in script or manual `ssh -R 10002:localhost:10002`
+- [ ] `GPU_SERVER_HOST` environment variable set (`localhost` for SSH tunnel)
 - [ ] Network connectivity tested
 
 ### Ubuntu GPU Server Setup
@@ -870,6 +1194,7 @@ tail -f gpu_server.log
 - `mps_only_plan.md` - Complete MPS-only setup plan
 - `mps_quickstart.md` - Quick start guide for AWS L4
 - `path_configuration_summary.md` - Path configuration details
+- `run_three_workloads.md` - Guide to run 3 workloads and view collected data
 
 ---
 

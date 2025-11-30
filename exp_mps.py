@@ -45,7 +45,7 @@ class MPS(Experiment):
             sched_done = True
             gpuid = self.gpu_states.index(gpu)
             real_node, real_gpu = self.GPU_LUT(gpuid)
-            mps_start(real_node, job, real_gpu, level=mps_lvl)
+            mps_start(real_node, job, real_gpu, level=mps_lvl, port=self.gpu_server_port)
             self.job_exe[job] = (gpuid, 0)
             print(f'Schedule time: {int(time.time()-self.start_time)}', file=run_log, flush=True)
             print(f'job {job} scheduled on GPU {gpu.index}, {real_node} device {real_gpu}', file=run_log, flush=True)
@@ -61,12 +61,12 @@ class MPS(Experiment):
 
         ####### initialize all GPUs #########
         for real_node in self.node_list:
-            kill_all(real_node)
-            broadcast_host(real_node, self)
+            kill_all(real_node, port=self.gpu_server_port)
+            broadcast_host(real_node, self, port=self.gpu_server_port)
         time.sleep(10)
         for gpu in self.gpu_states:
             real_node, real_gpu = self.GPU_LUT(gpu.index)
-            start_mps(real_node, real_gpu)
+            start_mps(real_node, real_gpu, port=self.gpu_server_port)
             # config_gpu(real_node, real_gpu, 0)
 
         ###### initialize some variables ########

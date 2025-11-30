@@ -199,10 +199,22 @@ while True:
                         mig_helper.create_ins(gpuid, sliceid)
                     print(f'configured gpu {gpuid} to partition code {code}')
                 elif 'kill all' == data_str: # 'kill all'
-                    cmd = 'pkill -2 python'
+                    # Send success BEFORE killing processes, otherwise connection resets
+                    connection.sendall(b'success')
+                    print(f'sent success for command: {data_str[:50]}')  # Debug: confirm success was sent
+                    
+                    # Kill training processes (but not gpu_server.py itself)
+                    # Use pkill with pattern to exclude gpu_server.py
+                    cmd = 'pkill -2 -f "python.*train"'
                     subprocess.Popen([cmd], shell=True)
+                    # Also kill any other Python training processes
+                    cmd = 'pkill -2 -f "_train.py"'
+                    subprocess.Popen([cmd], shell=True)
+                    # Disable MPS
                     cmd = '../disable_mps.sh'
-                    subprocess.Popen([cmd], shell=True)                    
+                    subprocess.Popen([cmd], shell=True)
+                    # Don't send success again - already sent above
+                    continue  # Skip the success send at the end
                 elif 'fkill' in data_str: # fkill 15 pid 19999
                     jobid = data_str.split(' ')[1]
                     pid = data_str.split(' ')[3]
@@ -231,6 +243,7 @@ while True:
 #                    subprocess.Popen([cmd], shell=True)
 
                 connection.sendall(b'success')
+                print(f'sent success for command: {data_str[:50]}')  # Debug: confirm success was sent
             else:
                 break
 

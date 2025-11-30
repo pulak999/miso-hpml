@@ -27,6 +27,7 @@ from threading import Event
 class Experiment:
     def __init__(self, args, physical_nodes):
         self.node_list = physical_nodes
+        self.gpu_server_port = getattr(args, 'gpu_server_port', 10002)
         self.start_time = 0 # real timer
         # shared attributes across different scheduling policies
         random.seed(args.seed)

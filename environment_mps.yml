@@ -11,6 +11,11 @@ dependencies:
   - torchaudio=0.10.0
   - cudatoolkit=11.3
   - cudnn=8.1
+  - mkl=2021.4.0
+  - mkl-service=2.4.0
+  - mkl_fft=1.3.1
+  - mkl_random=1.2.2
+  - intel-openmp=2021.4.0
   - numpy=1.19.2
   - scipy=1.7.3
   - pandas=1.3.2

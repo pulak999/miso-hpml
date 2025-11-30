@@ -30,9 +30,9 @@ def start_job(node, job, gpu, sliceid):
     cmd = f'start {job} gpu {gpu} slice {sliceid}'
     send_signal(node, cmd=cmd)   
 
-def mps_start(node, job, gpu, level=50):
+def mps_start(node, job, gpu, level=50, port=10002):
     cmd = f'mps_strt {job} gpu {gpu} lvl {level}'
-    send_signal(node, cmd=cmd)   
+    send_signal(node, port=port, cmd=cmd)   
 
 def mps_resume(node, job, gpu, resume_batch, level=50):
     cmd = f'mps_rsm {job} gpu {gpu} batch {resume_batch} lvl {level}'
@@ -46,9 +46,9 @@ def config_gpu(node, gpu, partition):
     cmd = f'config gpu {gpu} partition {partition}'
     send_signal(node, cmd=cmd)
 
-def start_mps(node, gpu): # this is essentially reset_mig and create_ins 7g.40gb, then run ./enable_mps_on_mig
+def start_mps(node, gpu, port=10002): # this is essentially reset_mig and create_ins 7g.40gb, then run ./enable_mps_on_mig
     cmd = f'mps_enable {gpu}'
-    send_signal(node, cmd=cmd)
+    send_signal(node, port=port, cmd=cmd)
 
 def end_mps(node, gpu): 
     cmd = f'mps_disable {gpu}'
@@ -58,15 +58,26 @@ def fkill_job(node, job, pid):
     cmd = f'fkill {job} pid {pid}'
     send_signal(node, cmd=cmd)
 
-def kill_all(node):
+def kill_all(node, port=10002):
     cmd = 'kill all'
-    send_signal(node, cmd=cmd)
+    send_signal(node, port=port, cmd=cmd)
 
-def broadcast_host(node, runtime):
-    cmd = f'hostname {socket.gethostname()}'
-    send_signal(node, cmd=cmd)
+def broadcast_host(node, runtime, port=10002):
+    # When using SSH tunnel (node == 'localhost'), workloads on remote server
+    # need to connect back. Use 'localhost' so they connect to remote localhost,
+    # which requires a reverse SSH tunnel to be set up.
+    # For direct connections, use the actual hostname.
+    if node == 'localhost' or node == '127.0.0.1':
+        # Using SSH tunnel - workloads should connect to localhost on remote side
+        # This requires reverse SSH tunnel: ssh -R 10002:localhost:10002 l4vm
+        hostname_to_send = 'localhost'
+    else:
+        hostname_to_send = socket.gethostname()
+    
+    cmd = f'hostname {hostname_to_send}'
+    send_signal(node, port=port, cmd=cmd)
     cmd = f'log_dir {runtime.tc}'
-    send_signal(node, cmd=cmd)
+    send_signal(node, port=port, cmd=cmd)
 
 def save_jobs(node, job_list, runtime, run_log):
     finish_status = [runtime.finish[job] for job in job_list]
@@ -95,7 +106,9 @@ def save_jobs(node, job_list, runtime, run_log):
 def thread_func(event, runtime, run_log, mode='full'): # this is an instance of the Experiment class 
     # here listen on the socket 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_address = (socket.gethostname(), 10002)
+    # Use 'localhost' instead of gethostname() to avoid resolution issues, especially with SSH tunnels
+    # Workloads connect to 'localhost' on remote side, which tunnels back via reverse SSH tunnel
+    server_address = ('localhost', 10002)
     print('starting up on {} port {}'.format(*server_address), file=run_log, flush=True)
     sock.bind(server_address)
     sock.listen(5) 
