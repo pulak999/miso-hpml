@@ -4,18 +4,20 @@
 # Usage: ./enable_mps_simple.sh <gpu_id>
 
 GPU_ID=$1
+USER=$(whoami)
+HOSTNAME=$(hostname)
 
 # Set GPU to EXCLUSIVE_PROCESS mode
 sudo nvidia-smi -i $GPU_ID -c EXCLUSIVE_PROCESS
 
-# Create MPS directories
-mkdir -p /tmp/mps_log/nvidia-mps$GPU_ID
-mkdir -p /tmp/mps_log/nvidia-log$GPU_ID
+# Create MPS directories (matching training script paths)
+mkdir -p /scratch/$USER/mps_log/nvidia-mps-$HOSTNAME/$GPU_ID
+mkdir -p /scratch/$USER/mps_log/nvidia-log-$HOSTNAME/$GPU_ID
 
-# Set environment variables
+# Set environment variables (matching training script paths)
 export CUDA_VISIBLE_DEVICES=$GPU_ID
-export CUDA_MPS_PIPE_DIRECTORY=/tmp/mps_log/nvidia-mps$GPU_ID
-export CUDA_MPS_LOG_DIRECTORY=/tmp/mps_log/nvidia-log$GPU_ID
+export CUDA_MPS_PIPE_DIRECTORY=/scratch/$USER/mps_log/nvidia-mps-$HOSTNAME/$GPU_ID
+export CUDA_MPS_LOG_DIRECTORY=/scratch/$USER/mps_log/nvidia-log-$HOSTNAME/$GPU_ID
 
 # Start MPS daemon
 nvidia-cuda-mps-control -d

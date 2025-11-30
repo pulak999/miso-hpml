@@ -98,13 +98,17 @@ while True:
                     batch = job_models[mapped_jobid].split('train')[1]
                     iters = num_iters[mapped_jobid]
                     if 'start' in data_str:
-                        cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} --node {host_node}'
+                        # Use host_node (scheduler client) if set, otherwise fall back to args.node (GPU server)
+                        target_node = host_node if host_node else args.node
+                        cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} --node {target_node}'
                         print(f'starting job {jobid} at gpu {gpuid} slice {sliceid}')
                         out_file = f'{log_dir}/job{jobid}_start.out'
                         err_file = f'{log_dir}/job{jobid}_start.err'
                     else:
                         resume_batch = int(re.findall(r'\d+', data_str)[3])
-                        cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} --node {host_node} --resume --start_batch {resume_batch}'
+                        # Use host_node (scheduler client) if set, otherwise fall back to args.node (GPU server)
+                        target_node = host_node if host_node else args.node
+                        cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} --node {target_node} --resume --start_batch {resume_batch}'
                         print(f'resuming job {jobid} at gpu {gpuid} slice {sliceid} batch {resume_batch}')
 
                         out_file = f'{log_dir}/job{jobid}_resume.out'
@@ -121,8 +125,10 @@ while True:
                     model = job_models[mapped_jobid].split('_')[0]
                     batch = job_models[mapped_jobid].split('train')[1]
                     iters = num_iters[mapped_jobid]
+                    # Use host_node (scheduler client) if set, otherwise fall back to args.node (GPU server)
+                    target_node = host_node if host_node else args.node
                     cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} \
-                        --node {host_node} --partition {mps_lvl} --mps_set --cuda_device {device}'
+                        --node {target_node} --partition {mps_lvl} --mps_set --cuda_device {device}'
                     print(f'starting job {jobid} at gpu {gpuid} for MPS')
                     
                     out_file = f'{log_dir}/job{jobid}_start.out'
@@ -140,8 +146,10 @@ while True:
                     model = job_models[mapped_jobid].split('_')[0]
                     batch = job_models[mapped_jobid].split('train')[1]
                     iters = num_iters[mapped_jobid]
+                    # Use host_node (scheduler client) if set, otherwise fall back to args.node (GPU server)
+                    target_node = host_node if host_node else args.node
                     cmd = f'CUDA_VISIBLE_DEVICES={device} python {model}_train.py --job_id {jobid} -b {batch} --iters {iters} \
-                        --node {host_node} --partition {mps_lvl} --mps_set --resume --start_batch {resume_batch} --cuda_device {device}'
+                        --node {target_node} --partition {mps_lvl} --mps_set --resume --start_batch {resume_batch} --cuda_device {device}'
                     print(f'resuming job {jobid} at gpu {gpuid} for MPS')
 
                     out_file = f'{log_dir}/job{jobid}_resume.out'
