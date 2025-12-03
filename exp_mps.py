@@ -10,6 +10,7 @@ import argparse
 import math
 from pathlib import Path
 import sys
+import subprocess
 
 # Import MISO config to get repository root
 from miso_config import REPO_ROOT, get_path
@@ -25,17 +26,6 @@ from send_signal import send_signal
 import socket
 from threading import Event
 
-# Import GPU telemetry collector (DCGM + NVML combined)
-try:
-    sys.path.append(get_path('mps'))
-    from gpu_telemetry import CombinedCollector
-    TELEMETRY_AVAILABLE = True
-except ImportError as e:
-    TELEMETRY_AVAILABLE = False
-    print(f"Warning: GPU telemetry not available: {e}")
-    print("  Install requirements: pip install nvidia-ml-py3")
-    print("  Ensure DCGM CLI (dcgmi) is installed and on PATH")
-
 class MPS(Experiment):
 
     def __init__(self, args, physical_nodes, max_tenants=3):
@@ -45,6 +35,87 @@ class MPS(Experiment):
         self.gpu_states = []
         for i in range(args.num_gpu):
             self.gpu_states.append(MPS_GPU_Status(i, max_tenants=max_tenants))        
+
+    def _transfer_telemetry_files(self, run_log):
+        """Transfer telemetry files from server to client logs/mps/ directory."""
+        import os
+        user = os.environ.get('USER')
+        server_telemetry_dir = f'/scratch/{user}/telemetry'
+        client_telemetry_dir = 'logs/mps'
+        
+        # Ensure client directory exists
+        Path(client_telemetry_dir).mkdir(parents=True, exist_ok=True)
+        
+        for real_node in self.node_list:
+            try:
+                # Determine if we need SSH or can use direct path
+                # If node is localhost, files might already be accessible
+                if real_node == 'localhost' or real_node == '127.0.0.1':
+                    # For localhost, try direct copy first
+                    if os.path.exists(server_telemetry_dir):
+                        import shutil
+                        for file in Path(server_telemetry_dir).glob('*'):
+                            if file.is_file():
+                                dest = Path(client_telemetry_dir) / file.name
+                                shutil.copy2(file, dest)
+                                print(f'Copied telemetry file: {file.name}', file=run_log, flush=True)
+                    else:
+                        print(f'Warning: Telemetry directory {server_telemetry_dir} not found locally', file=run_log, flush=True)
+                else:
+                    # For remote nodes, use scp
+                    # Try to determine username from node or use current user
+                    # Format: user@host or just host
+                    if '@' in real_node:
+                        ssh_target = real_node
+                    else:
+                        ssh_target = f'{user}@{real_node}'
+                    
+                    # Transfer all telemetry files
+                    scp_cmd = [
+                        'scp',
+                        '-q',  # Quiet mode
+                        '-o', 'StrictHostKeyChecking=no',
+                        '-o', 'UserKnownHostsFile=/dev/null',
+                        f'{ssh_target}:{server_telemetry_dir}/*',
+                        client_telemetry_dir + '/'
+                    ]
+                    
+                    try:
+                        result = subprocess.run(
+                            scp_cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+                        if result.returncode == 0:
+                            print(f'Transferred telemetry files from {real_node} to {client_telemetry_dir}/', file=run_log, flush=True)
+                        else:
+                            print(f'Warning: scp failed for {real_node}: {result.stderr}', file=run_log, flush=True)
+                            # Try alternative: use rsync if available
+                            rsync_cmd = [
+                                'rsync',
+                                '-avz',
+                                '-e', 'ssh -o StrictHostKeyChecking=no',
+                                f'{ssh_target}:{server_telemetry_dir}/',
+                                client_telemetry_dir + '/'
+                            ]
+                            result2 = subprocess.run(
+                                rsync_cmd,
+                                capture_output=True,
+                                text=True,
+                                timeout=30
+                            )
+                            if result2.returncode == 0:
+                                print(f'Transferred telemetry files via rsync from {real_node}', file=run_log, flush=True)
+                            else:
+                                print(f'Warning: Both scp and rsync failed for {real_node}. Files may be on server at {server_telemetry_dir}', file=run_log, flush=True)
+                    except subprocess.TimeoutExpired:
+                        print(f'Warning: Timeout transferring telemetry files from {real_node}', file=run_log, flush=True)
+                    except Exception as e:
+                        print(f'Warning: Error transferring telemetry files from {real_node}: {e}', file=run_log, flush=True)
+                        print(f'  Telemetry files may be available on server at {server_telemetry_dir}', file=run_log, flush=True)
+            except Exception as e:
+                print(f'Warning: Error in telemetry file transfer for {real_node}: {e}', file=run_log, flush=True)
 
     # try to schedule job on a list of GPUs
     def try_schedule(self, job, gpu_list, migration, run_log, mps_lvl):
@@ -66,31 +137,28 @@ class MPS(Experiment):
     def run(self, args, mps_lvl=33): 
         run_log = open('logs/experiment_mps.log','w')
 
-        ####### start GPU telemetry collection (DCGM + NVML) ##########
-        telemetry_collector = None
-        if TELEMETRY_AVAILABLE and hasattr(args, 'collect_telemetry') and args.collect_telemetry:
+        ####### start GPU telemetry collection on server (DCGM + NVML) ##########
+        self.telemetry_enabled = False
+        if hasattr(args, 'collect_telemetry') and args.collect_telemetry:
             try:
                 # Get list of GPU IDs to monitor (0 to num_gpu-1)
                 gpu_ids = list(range(args.num_gpu))
                 sample_interval = getattr(args, 'telemetry_interval', 1.0)
-                output_dir = 'logs/mps'
+                # Telemetry runs on server, output to server's scratch directory
+                import os
+                user = os.environ.get('USER')
+                output_dir = f'/scratch/{user}/telemetry'
                 
-                # Create combined collector (DCGM for GPU-wide metrics, NVML for per-process)
-                telemetry_collector = CombinedCollector(
-                    gpu_ids=gpu_ids,
-                    output_dir=output_dir,
-                    sample_interval=sample_interval,
-                    max_bytes_per_file=getattr(args, 'telemetry_max_bytes', 50 * 1024 * 1024),  # 50 MB default
-                    max_rotated_files=getattr(args, 'telemetry_max_files', 10),
-                    compress_rotated=getattr(args, 'telemetry_compress', True),
-                    summary_write_interval=getattr(args, 'telemetry_summary_interval', 60.0)
-                )
-                telemetry_collector.start()
-                print(f'GPU telemetry collection started (DCGM+NVML, interval={sample_interval}s, output={output_dir})', file=run_log, flush=True)
+                # Start telemetry on GPU server
+                for real_node in self.node_list:
+                    start_telemetry(real_node, gpu_ids, sample_interval, output_dir, port=self.gpu_server_port)
+                
+                self.telemetry_enabled = True
+                print(f'GPU telemetry collection started on server (DCGM+NVML, interval={sample_interval}s, output={output_dir})', file=run_log, flush=True)
             except Exception as e:
-                print(f'Warning: Failed to start GPU telemetry: {e}', file=run_log, flush=True)
-                print(f'  Ensure DCGM CLI (dcgmi) is installed and pynvml is available', file=run_log, flush=True)
-                telemetry_collector = None
+                print(f'Warning: Failed to start GPU telemetry on server: {e}', file=run_log, flush=True)
+                print(f'  Ensure DCGM CLI (dcgmi) is installed on server and pynvml is available', file=run_log, flush=True)
+                self.telemetry_enabled = False
 
         ####### start job listener ##########
         stop_event = Event()
@@ -227,13 +295,17 @@ class MPS(Experiment):
         self.term_thread()
         stop_event.set()
         
-        ####### stop GPU telemetry collection ##########
-        if telemetry_collector:
+        ####### stop GPU telemetry collection on server and transfer files ##########
+        if hasattr(self, 'telemetry_enabled') and self.telemetry_enabled:
             try:
-                telemetry_collector.stop()
-                print('GPU telemetry collection stopped', file=run_log, flush=True)
+                for real_node in self.node_list:
+                    stop_telemetry(real_node, port=self.gpu_server_port)
+                print('GPU telemetry collection stopped on server', file=run_log, flush=True)
+                
+                # Transfer telemetry files from server to client
+                self._transfer_telemetry_files(run_log)
             except Exception as e:
-                print(f'Warning: Error stopping GPU telemetry: {e}', file=run_log, flush=True)
+                print(f'Warning: Error stopping GPU telemetry on server: {e}', file=run_log, flush=True)
         
 #        print('trying to join threads')    
 #        x.join()

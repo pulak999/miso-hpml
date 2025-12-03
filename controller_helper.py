@@ -79,6 +79,21 @@ def broadcast_host(node, runtime, port=10002):
     cmd = f'log_dir {runtime.tc}'
     send_signal(node, port=port, cmd=cmd)
 
+def start_telemetry(node, gpu_ids, interval=1.0, output_dir=None, port=10002):
+    """Start GPU telemetry collection on the server."""
+    if output_dir is None:
+        import os
+        user = os.environ.get('USER')
+        output_dir = f'/scratch/{user}/telemetry'
+    gpu_ids_str = ','.join(str(gid) for gid in gpu_ids)
+    cmd = f'telemetry_start {gpu_ids_str} {interval} {output_dir}'
+    send_signal(node, port=port, cmd=cmd)
+
+def stop_telemetry(node, port=10002):
+    """Stop GPU telemetry collection on the server."""
+    cmd = 'telemetry_stop'
+    send_signal(node, port=port, cmd=cmd)
+
 def save_jobs(node, job_list, runtime, run_log):
     finish_status = [runtime.finish[job] for job in job_list]
     if 1 in finish_status:
