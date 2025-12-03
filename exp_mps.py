@@ -25,14 +25,26 @@ from send_signal import send_signal
 import socket
 from threading import Event
 
+# Import GPU telemetry collector (DCGM + NVML combined)
+try:
+    sys.path.append(get_path('mps'))
+    from gpu_telemetry import CombinedCollector
+    TELEMETRY_AVAILABLE = True
+except ImportError as e:
+    TELEMETRY_AVAILABLE = False
+    print(f"Warning: GPU telemetry not available: {e}")
+    print("  Install requirements: pip install nvidia-ml-py3")
+    print("  Ensure DCGM CLI (dcgmi) is installed and on PATH")
+
 class MPS(Experiment):
 
-    def __init__(self, args, physical_nodes):
+    def __init__(self, args, physical_nodes, max_tenants=3):
         super().__init__(args, physical_nodes)
         self.tc = 'mps'
+        self.max_tenants = max_tenants
         self.gpu_states = []
         for i in range(args.num_gpu):
-            self.gpu_states.append(MPS_GPU_Status(i))        
+            self.gpu_states.append(MPS_GPU_Status(i, max_tenants=max_tenants))        
 
     # try to schedule job on a list of GPUs
     def try_schedule(self, job, gpu_list, migration, run_log, mps_lvl):
@@ -53,6 +65,32 @@ class MPS(Experiment):
 
     def run(self, args, mps_lvl=33): 
         run_log = open('logs/experiment_mps.log','w')
+
+        ####### start GPU telemetry collection (DCGM + NVML) ##########
+        telemetry_collector = None
+        if TELEMETRY_AVAILABLE and hasattr(args, 'collect_telemetry') and args.collect_telemetry:
+            try:
+                # Get list of GPU IDs to monitor (0 to num_gpu-1)
+                gpu_ids = list(range(args.num_gpu))
+                sample_interval = getattr(args, 'telemetry_interval', 1.0)
+                output_dir = 'logs/mps'
+                
+                # Create combined collector (DCGM for GPU-wide metrics, NVML for per-process)
+                telemetry_collector = CombinedCollector(
+                    gpu_ids=gpu_ids,
+                    output_dir=output_dir,
+                    sample_interval=sample_interval,
+                    max_bytes_per_file=getattr(args, 'telemetry_max_bytes', 50 * 1024 * 1024),  # 50 MB default
+                    max_rotated_files=getattr(args, 'telemetry_max_files', 10),
+                    compress_rotated=getattr(args, 'telemetry_compress', True),
+                    summary_write_interval=getattr(args, 'telemetry_summary_interval', 60.0)
+                )
+                telemetry_collector.start()
+                print(f'GPU telemetry collection started (DCGM+NVML, interval={sample_interval}s, output={output_dir})', file=run_log, flush=True)
+            except Exception as e:
+                print(f'Warning: Failed to start GPU telemetry: {e}', file=run_log, flush=True)
+                print(f'  Ensure DCGM CLI (dcgmi) is installed and pynvml is available', file=run_log, flush=True)
+                telemetry_collector = None
 
         ####### start job listener ##########
         stop_event = Event()
@@ -143,8 +181,8 @@ class MPS(Experiment):
         
 #            # sanity check
             for gpu in self.gpu_states:
-                if len(gpu.jobs) > 3:
-                    raise RuntimeError('Check failed: GPU should not have >3 jobs')
+                if len(gpu.jobs) > self.max_tenants:
+                    raise RuntimeError(f'Check failed: GPU should not have >{self.max_tenants} jobs')
             
             ################ check if termination condition is met ################
         
@@ -188,6 +226,15 @@ class MPS(Experiment):
 
         self.term_thread()
         stop_event.set()
+        
+        ####### stop GPU telemetry collection ##########
+        if telemetry_collector:
+            try:
+                telemetry_collector.stop()
+                print('GPU telemetry collection stopped', file=run_log, flush=True)
+            except Exception as e:
+                print(f'Warning: Error stopping GPU telemetry: {e}', file=run_log, flush=True)
+        
 #        print('trying to join threads')    
 #        x.join()
         print('done')

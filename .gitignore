@@ -5,7 +5,5 @@ raw.githubusercontent.com
 __pycache__
 *.pyc
 mps/scheduler/simulator/logs/
-mig_device_autogen.json
-logs
 MISO_Workload
 MISO_Workload.zip

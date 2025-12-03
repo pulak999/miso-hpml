@@ -6,6 +6,8 @@ export CUDA_MPS_LOG_DIRECTORY=/scratch/$USER/mps_log/nvidia-log
 
 cd models
 
+
+
 MPS_MODE=test_100pct
 #export CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=100
 python resnet_train.py --gpu_type $MPS_MODE --direct_start --partition 100 --time_limit 30 -b 512 &&
