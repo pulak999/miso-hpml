@@ -55,15 +55,16 @@ def get_speedup(job_models, error_mean, error_std):
     return perf_actual, perf_pred
 
 class MPS_GPU_Status:    
-    def __init__(self, node_index):
+    def __init__(self, node_index, max_tenants=3):
         self.jobs = []
-        self.index = node_index        
+        self.index = node_index
+        self.max_tenants = max_tenants
     @property
     def active_jobs(self):
         return [j for j in self.jobs if j != 'idle']
     @property
     def full(self):
-        if len(self.jobs) == 3:
+        if len(self.jobs) >= self.max_tenants:
             return True
         else:
             return False
