@@ -121,11 +121,44 @@ def save_jobs(node, job_list, runtime, run_log):
 def thread_func(event, runtime, run_log, mode='full'): # this is an instance of the Experiment class 
     # here listen on the socket 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Allow reuse of address to avoid "Address already in use" errors
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     # Use 'localhost' instead of gethostname() to avoid resolution issues, especially with SSH tunnels
     # Workloads connect to 'localhost' on remote side, which tunnels back via reverse SSH tunnel
     server_address = ('localhost', 10002)
     print('starting up on {} port {}'.format(*server_address), file=run_log, flush=True)
-    sock.bind(server_address)
+    
+    # Try to bind, with retry logic
+    max_retries = 5
+    retry_delay = 2
+    for attempt in range(max_retries):
+        try:
+            sock.bind(server_address)
+            break  # Success, exit retry loop
+        except OSError as e:
+            if e.errno == 48:  # Address already in use
+                if attempt < max_retries - 1:
+                    print(f'Port 10002 in use, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})...', file=run_log, flush=True)
+                    time.sleep(retry_delay)
+                    # Close and recreate socket for retry
+                    try:
+                        sock.close()
+                    except:
+                        pass
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                else:
+                    print(f'ERROR: Port 10002 is already in use after {max_retries} attempts.', file=run_log, flush=True)
+                    print(f'  This usually means:', file=run_log, flush=True)
+                    print(f'  1. A previous experiment is still running', file=run_log, flush=True)
+                    print(f'  2. A previous experiment did not clean up properly', file=run_log, flush=True)
+                    print(f'  Solution: Kill any existing processes using port 10002:', file=run_log, flush=True)
+                    print(f'    lsof -ti:10002 | xargs kill -9', file=run_log, flush=True)
+                    print(f'  Or wait a few seconds for the port to be released', file=run_log, flush=True)
+                    raise
+            else:
+                raise
+    
     sock.listen(5) 
 
     while not event.is_set():
@@ -195,4 +228,9 @@ def thread_func(event, runtime, run_log, mode='full'): # this is an instance of 
         finally:
             connection.close()
             # print('Terminated connection')
+    # Clean up socket when thread exits
+    try:
+        sock.close()
+    except:
+        pass
     print('Terminated thread')

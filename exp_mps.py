@@ -164,6 +164,13 @@ class MPS(Experiment):
         stop_event = Event()
         x = threading.Thread(target=thread_func, daemon=True, args=(stop_event, self, run_log, 'mps'))
         x.start()
+        # Give thread a moment to start and bind to port
+        time.sleep(1)
+        # Check if thread is still alive (if it crashed, it won't be)
+        if not x.is_alive():
+            print('ERROR: Job listener thread failed to start!', file=run_log, flush=True)
+            print('  Check logs above for port binding errors. Experiment cannot continue without listener.', file=run_log, flush=True)
+            raise RuntimeError('Job listener thread failed to start - cannot receive job status updates')
 
         ####### initialize all GPUs #########
         for real_node in self.node_list:
@@ -260,7 +267,12 @@ class MPS(Experiment):
                 self.overall_rate.append(self.span_time)
                 break
             elif int(time.time()-self.start_time) >= 36000:
-                pdb.set_trace()
+                print(f'WARNING: Experiment timeout after 36000 seconds. Jobs may not have completed.', file=run_log, flush=True)
+                print(f'  Finished jobs: {sum(self.finish.values())}/{len(self.finish)}', file=run_log, flush=True)
+                print(f'  Queue index: {queue_ind}/{args.num_job}', file=run_log, flush=True)
+                print(f'  Arrived jobs waiting: {len(arrived_jobs)}', file=run_log, flush=True)
+                # Break instead of pdb to allow cleanup
+                break
        
         ########################
         Path('logs/mps').mkdir(parents=True, exist_ok=True)
