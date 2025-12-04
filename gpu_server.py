@@ -92,7 +92,44 @@ while True:
             if data:
                 data_str = data.decode('utf-8')
                 print('received ' + data_str)
-                if 'start' in data_str or 'resume' in data_str: # 'start 15 gpu 1 slice 0'
+                if 'telemetry_start' in data_str: # 'telemetry_start gpu_ids interval output_dir'
+                    # Format: telemetry_start 0,1 1.0 /scratch/user/telemetry
+                    parts = data_str.split(' ')
+                    gpu_ids_str = parts[1] if len(parts) > 1 else '0'
+                    interval = float(parts[2]) if len(parts) > 2 else 1.0
+                    output_dir = parts[3] if len(parts) > 3 else f'/scratch/{user}/telemetry'
+                    gpu_ids = [int(x.strip()) for x in gpu_ids_str.split(',')]
+                    
+                    # Start telemetry collector on server
+                    telemetry_script = get_path('mps', 'gpu_telemetry.py')
+                    cmd = f'python3 {telemetry_script} {gpu_ids_str} {output_dir} {interval}'
+                    # Run in background, redirect output
+                    telemetry_proc = subprocess.Popen(
+                        [cmd], 
+                        shell=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        cwd=REPO_ROOT
+                    )
+                    # Store PID for later stopping
+                    if not hasattr(gpu_server, 'telemetry_pid'):
+                        gpu_server.telemetry_pid = {}
+                    for gid in gpu_ids:
+                        gpu_server.telemetry_pid[gid] = telemetry_proc.pid
+                    print(f'Started telemetry collection for GPUs {gpu_ids} (PID: {telemetry_proc.pid})')
+                elif 'telemetry_stop' in data_str: # 'telemetry_stop'
+                    # Stop telemetry collector
+                    if hasattr(gpu_server, 'telemetry_pid'):
+                        for pid in gpu_server.telemetry_pid.values():
+                            try:
+                                os.kill(pid, signal.SIGTERM)
+                            except:
+                                pass
+                        gpu_server.telemetry_pid = {}
+                    # Also try to kill any telemetry processes
+                    subprocess.Popen(['pkill -f "gpu_telemetry.py"'], shell=True)
+                    print('Stopped telemetry collection')
+                elif 'start' in data_str or 'resume' in data_str: # 'start 15 gpu 1 slice 0'
                     jobid = re.findall(r'\d+', data_str)[0]
                     gpuid = int(re.findall(r'\d+', data_str)[1])
                     sliceid = int(re.findall(r'\d+', data_str)[2])
@@ -246,43 +283,6 @@ while True:
                     tc = data_str.split(' ')[1]
                     log_dir = f'/scratch/{user}/miso_logs/{tc}' # this is dir for training progress
                     Path(log_dir).mkdir(parents=True, exist_ok=True)
-                elif 'telemetry_start' in data_str: # 'telemetry_start gpu_ids interval output_dir'
-                    # Format: telemetry_start 0,1 1.0 /scratch/user/telemetry
-                    parts = data_str.split(' ')
-                    gpu_ids_str = parts[1] if len(parts) > 1 else '0'
-                    interval = float(parts[2]) if len(parts) > 2 else 1.0
-                    output_dir = parts[3] if len(parts) > 3 else f'/scratch/{user}/telemetry'
-                    gpu_ids = [int(x.strip()) for x in gpu_ids_str.split(',')]
-                    
-                    # Start telemetry collector on server
-                    telemetry_script = get_path('mps', 'gpu_telemetry.py')
-                    cmd = f'python3 {telemetry_script} {gpu_ids_str} {output_dir} {interval}'
-                    # Run in background, redirect output
-                    telemetry_proc = subprocess.Popen(
-                        [cmd], 
-                        shell=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        cwd=REPO_ROOT
-                    )
-                    # Store PID for later stopping
-                    if not hasattr(gpu_server, 'telemetry_pid'):
-                        gpu_server.telemetry_pid = {}
-                    for gid in gpu_ids:
-                        gpu_server.telemetry_pid[gid] = telemetry_proc.pid
-                    print(f'Started telemetry collection for GPUs {gpu_ids} (PID: {telemetry_proc.pid})')
-                elif 'telemetry_stop' in data_str: # 'telemetry_stop'
-                    # Stop telemetry collector
-                    if hasattr(gpu_server, 'telemetry_pid'):
-                        for pid in gpu_server.telemetry_pid.values():
-                            try:
-                                os.kill(pid, signal.SIGTERM)
-                            except:
-                                pass
-                        gpu_server.telemetry_pid = {}
-                    # Also try to kill any telemetry processes
-                    subprocess.Popen(['pkill -f "gpu_telemetry.py"'], shell=True)
-                    print('Stopped telemetry collection')
 
 #                elif 'kill' in data_str: # 'kill 15', kills the run.sh processes
 #                    jobid = re.findall(r'\d+', data_str)[0]
