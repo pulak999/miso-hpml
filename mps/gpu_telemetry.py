@@ -2,14 +2,18 @@
 """
 dcgm_nvml_collector.py
 
-Combined DCGM (CLI) + NVML telemetry collector.
+Combined DCGM (CLI + Python bindings) + NVML telemetry collector.
 
 Features:
 - DCGM CLI (dcgmi dmon --csv) -> GPU-wide timeseries (ndjson per GPU)
-- NVML (pynvml) -> per-process memory & process list samples (ndjson per GPU)
+- DCGM Python bindings (pydcgm) -> per-process metrics (MPS/MIG compatible, preferred)
+- NVML (pynvml) -> per-process memory & process list samples (fallback if DCGM unavailable)
 - Rotating NDJSON writers (size-based), optional gzip compression, file retention
 - Bounded in-memory summaries via Welford's algorithm (per-field)
 - CLI: python dcgm_nvml_collector.py 0,1 logs/telemetry 1.0
+
+The DCGM process sampler (pydcgm) is preferred as it works seamlessly with both
+MPS (Multi-Process Service) and MIG (Multi-Instance GPU) configurations.
 """
 
 from __future__ import annotations
@@ -29,7 +33,24 @@ from collections import defaultdict
 try:
     import pynvml
 except Exception as e:
+    print(f"[gpu_telemetry] Warning: Failed to import pynvml: {e}", file=sys.stderr)
     pynvml = None
+
+# Attempt to import DCGM Python bindings
+try:
+    import dcgm_agent
+    import dcgm_fields
+    import dcgm_structs
+    import pydcgm
+    DCGM_AVAILABLE = True
+except Exception as e:
+    print(f"[gpu_telemetry] Warning: Failed to import DCGM Python bindings (dcgm_agent, dcgm_fields, dcgm_structs, pydcgm): {e}", file=sys.stderr)
+    print(f"[gpu_telemetry] DCGM per-process telemetry will be disabled. Install DCGM or ensure pydcgm is on PYTHONPATH.", file=sys.stderr)
+    dcgm_agent = None
+    dcgm_fields = None
+    dcgm_structs = None
+    pydcgm = None
+    DCGM_AVAILABLE = False
 
 # -----------------------
 # Configurable defaults
@@ -257,6 +278,157 @@ class DCGMCLIReader:
         return self._running
 
 # -----------------------
+# DCGM process sampler (pydcgm) - compatible with MPS and MIG
+# -----------------------
+class DCGMProcessSampler:
+    """
+    Samples per-GPU process lists and process GPU metrics using DCGM pydcgm bindings.
+    Works with both MPS and MIG configurations.
+    Calls on_sample(metrics) with a per-gpu dict: {'timestamp', 'gpu_id', 'processes':[{'pid', 'used_memory_mb', 'sm_active', ...}], 'num_processes'}
+    """
+    def __init__(self, gpu_ids: List[int], sample_interval: float, on_sample: Callable[[Dict[str, Any]], None], dcgm_handle=None):
+        if not DCGM_AVAILABLE:
+            raise RuntimeError("DCGM Python bindings (pydcgm) are not installed. Install DCGM or ensure pydcgm is available.")
+        self.gpu_ids = list(gpu_ids)
+        self.sample_interval = sample_interval
+        self.on_sample = on_sample
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._dcgm_handle = dcgm_handle
+        self._own_handle = False
+        
+        # Process fields to monitor
+        self.PROCESS_FIELDS = [
+            dcgm_fields.DCGM_FI_PROF_SM_ACTIVE,
+            dcgm_fields.DCGM_FI_PROF_PIPE_TENSOR_ACTIVE,
+            dcgm_fields.DCGM_FI_PROF_DRAM_ACTIVE,
+            dcgm_fields.DCGM_FI_DEV_FB_USED,
+        ]
+        
+        # Initialize DCGM if handle not provided
+        if self._dcgm_handle is None:
+            try:
+                dcgm_agent.dcgmInit()
+                self._dcgm_handle = dcgm_agent.dcgmStartEmbedded(dcgm_structs.DCGM_OPERATION_MODE_AUTO)
+                self._own_handle = True
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize DCGM: {e}")
+        
+        # Create GPU group
+        try:
+            self.gpu_group = pydcgm.DcgmGroup(self._dcgm_handle, groupName=f"telemetry_gpus_{id(self)}")
+            for gid in self.gpu_ids:
+                self.gpu_group.AddGpu(gid)
+        except Exception as e:
+            if self._own_handle:
+                try:
+                    dcgm_agent.dcgmShutdown()
+                except:
+                    pass
+            raise RuntimeError(f"Failed to create DCGM GPU group: {e}")
+        
+        # Create process field group
+        try:
+            self.process_fg = pydcgm.DcgmFieldGroup(self._dcgm_handle, f"processFields_{id(self)}", self.PROCESS_FIELDS)
+        except Exception as e:
+            if self._own_handle:
+                try:
+                    dcgm_agent.dcgmShutdown()
+                except:
+                    pass
+            raise RuntimeError(f"Failed to create DCGM field group: {e}")
+        
+        # Create process monitor
+        try:
+            self.process_mon = pydcgm.DcgmProcess(self._dcgm_handle, self.process_fg)
+        except Exception as e:
+            if self._own_handle:
+                try:
+                    dcgm_agent.dcgmShutdown()
+                except:
+                    pass
+            raise RuntimeError(f"Failed to create DCGM process monitor: {e}")
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def _loop(self):
+        while self._running:
+            ts = time.time()
+            try:
+                # Get all process values from DCGM
+                process_vals = self.process_mon.GetAll()
+                
+                # Group processes by GPU
+                gpu_processes = defaultdict(list)
+                for pv in process_vals:
+                    gpu_id = pv.gpuId
+                    if gpu_id not in self.gpu_ids:
+                        continue
+                    
+                    # Extract process information
+                    pid = pv.pid
+                    field_values = pv.fieldValues
+                    
+                    # Get memory usage (DCGM_FI_DEV_FB_USED is in bytes)
+                    mem_bytes = field_values.get(dcgm_fields.DCGM_FI_DEV_FB_USED, 0)
+                    mem_mb = (mem_bytes / (1024 * 1024)) if mem_bytes else 0.0
+                    
+                    # Get other metrics
+                    sm_active = field_values.get(dcgm_fields.DCGM_FI_PROF_SM_ACTIVE, None)
+                    pipe_tensor_active = field_values.get(dcgm_fields.DCGM_FI_PROF_PIPE_TENSOR_ACTIVE, None)
+                    dram_active = field_values.get(dcgm_fields.DCGM_FI_PROF_DRAM_ACTIVE, None)
+                    
+                    proc_info = {
+                        "pid": int(pid) if pid is not None else None,
+                        "used_memory_mb": float(mem_mb) if mem_mb else None,
+                        "sm_active": float(sm_active) if sm_active is not None else None,
+                        "pipe_tensor_active": float(pipe_tensor_active) if pipe_tensor_active is not None else None,
+                        "dram_active": float(dram_active) if dram_active is not None else None,
+                    }
+                    gpu_processes[gpu_id].append(proc_info)
+                
+                # Send metrics for each GPU
+                for gid in self.gpu_ids:
+                    procs = gpu_processes.get(gid, [])
+                    metrics = {
+                        "timestamp": ts,
+                        "gpu_id": int(gid),
+                        "processes": procs,
+                        "num_processes": len(procs)
+                    }
+                    try:
+                        self.on_sample(metrics)
+                    except Exception:
+                        pass
+                        
+            except Exception as e:
+                # Continue sampling other GPUs
+                print(f"[DCGM ProcessSampler] sampling error: {e}", file=sys.stderr)
+            
+            # Sleep until next iteration
+            time.sleep(self.sample_interval)
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2.0)
+        # Note: Don't shutdown DCGM here if handle is shared
+        # The caller should manage DCGM lifecycle
+
+    def __del__(self):
+        # Cleanup if we own the handle
+        if self._own_handle and self._dcgm_handle is not None:
+            try:
+                dcgm_agent.dcgmShutdown()
+            except:
+                pass
+
+# -----------------------
 # NVML process sampler
 # -----------------------
 class NVMLProcessSampler:
@@ -374,12 +546,40 @@ class CombinedCollector:
         # DCGM backend
         self.dcgmi_reader = DCGMCLIReader(self.gpu_ids, self.sample_interval, on_sample=self._on_dcgm_sample)
 
-        # NVML sampler
-        if pynvml is None:
-            print("[CombinedCollector] warning: pynvml not installed; per-process sampling disabled. Install nvidia-ml-py3 to enable.", file=sys.stderr)
-            self.nvml_sampler = None
+        # DCGM process sampler (preferred - works with MPS and MIG)
+        self.dcgm_process_sampler = None
+        self._dcgm_handle = None
+        if DCGM_AVAILABLE:
+            try:
+                # Initialize DCGM for process monitoring (can be shared with other DCGM operations)
+                dcgm_agent.dcgmInit()
+                self._dcgm_handle = dcgm_agent.dcgmStartEmbedded(dcgm_structs.DCGM_OPERATION_MODE_AUTO)
+                self.dcgm_process_sampler = DCGMProcessSampler(
+                    self.gpu_ids, 
+                    self.sample_interval, 
+                    on_sample=self._on_dcgm_process_sample,
+                    dcgm_handle=self._dcgm_handle
+                )
+                print("[CombinedCollector] DCGM process sampler initialized (MPS/MIG compatible)", file=sys.stderr)
+            except Exception as e:
+                print(f"[CombinedCollector] warning: Failed to initialize DCGM process sampler: {e}. Falling back to NVML if available.", file=sys.stderr)
+                self.dcgm_process_sampler = None
+                if self._dcgm_handle:
+                    try:
+                        dcgm_agent.dcgmShutdown()
+                    except:
+                        pass
+                    self._dcgm_handle = None
+        
+        # NVML sampler (fallback if DCGM not available)
+        if self.dcgm_process_sampler is None:
+            if pynvml is None:
+                print("[CombinedCollector] warning: Neither DCGM nor pynvml available; per-process sampling disabled.", file=sys.stderr)
+                self.nvml_sampler = None
+            else:
+                self.nvml_sampler = NVMLProcessSampler(self.gpu_ids, self.sample_interval, on_sample=self._on_nvml_sample)
         else:
-            self.nvml_sampler = NVMLProcessSampler(self.gpu_ids, self.sample_interval, on_sample=self._on_nvml_sample)
+            self.nvml_sampler = None
 
         self._running = False
         self._lock = threading.Lock()
@@ -424,8 +624,55 @@ class CombinedCollector:
                     pass
                 self._last_summary_write = time.time()
 
+    def _on_dcgm_process_sample(self, metrics: Dict[str, Any]):
+        """Called for each DCGM per-gpu process sample."""
+        with self._lock:
+            now = metrics.get("timestamp", time.time())
+            if self._start_time is None:
+                self._start_time = now
+            metrics["time_from_start"] = now - self._start_time
+            gid = metrics.get("gpu_id")
+            if gid is None:
+                return
+            try:
+                self.proc_writers[int(gid)].write(metrics)
+            except Exception:
+                pass
+            # Update aggregated per-gpu process memory stats: e.g., sum memory, max per-sample
+            # compute per-sample totals
+            procs = metrics.get("processes", [])
+            total_mem = 0.0
+            max_mem = 0.0
+            total_sm_active = 0.0
+            for p in procs:
+                mem = p.get("used_memory_mb")
+                if mem is not None:
+                    total_mem += float(mem)
+                    if float(mem) > max_mem:
+                        max_mem = float(mem)
+                # Track SM activity
+                sm = p.get("sm_active")
+                if sm is not None:
+                    total_sm_active += float(sm)
+            # record totals
+            sdict = self.proc_stats[int(gid)]
+            t_st = sdict.get("process_total_memory_mb")
+            if t_st is None:
+                t_st = OnlineStats(); sdict["process_total_memory_mb"] = t_st
+            t_st.add(total_mem)
+            m_st = sdict.get("process_max_memory_mb")
+            if m_st is None:
+                m_st = OnlineStats(); sdict["process_max_memory_mb"] = m_st
+            m_st.add(max_mem)
+            # Track SM activity if available
+            if total_sm_active > 0:
+                sm_st = sdict.get("process_total_sm_active")
+                if sm_st is None:
+                    sm_st = OnlineStats(); sdict["process_total_sm_active"] = sm_st
+                sm_st.add(total_sm_active)
+
     def _on_nvml_sample(self, metrics: Dict[str, Any]):
-        """Called for each NVML per-gpu process sample."""
+        """Called for each NVML per-gpu process sample (fallback)."""
         with self._lock:
             now = metrics.get("timestamp", time.time())
             if self._start_time is None:
@@ -471,8 +718,11 @@ class CombinedCollector:
             raise RuntimeError("dcgmi not found in PATH. Install NVIDIA DCGM (dcgmi) or ensure it's on PATH.")
         # start DCGM reader
         self.dcgmi_reader.start()
-        # start NVML sampler if available
-        if self.nvml_sampler is not None:
+        # start DCGM process sampler if available (preferred - MPS/MIG compatible)
+        if self.dcgm_process_sampler is not None:
+            self.dcgm_process_sampler.start()
+        # start NVML sampler if DCGM not available (fallback)
+        elif self.nvml_sampler is not None:
             self.nvml_sampler.start()
         self._running = True
         print("[CombinedCollector] started")
@@ -485,6 +735,11 @@ class CombinedCollector:
             self.dcgmi_reader.stop()
         except Exception:
             pass
+        if self.dcgm_process_sampler is not None:
+            try:
+                self.dcgm_process_sampler.stop()
+            except Exception:
+                pass
         if self.nvml_sampler is not None:
             try:
                 self.nvml_sampler.stop()
@@ -505,6 +760,13 @@ class CombinedCollector:
         try:
             if pynvml is not None:
                 pynvml.nvmlShutdown()
+        except Exception:
+            pass
+        # shutdown DCGM if we initialized it
+        try:
+            if self._dcgm_handle is not None:
+                dcgm_agent.dcgmShutdown()
+                self._dcgm_handle = None
         except Exception:
             pass
         self._running = False
