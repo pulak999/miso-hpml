@@ -1,8 +1,4 @@
-Warning: Failed to start GPU telemetry: dcgmi not found in PATH. Install NVIDIA DCGM (dcgmi) or ensure it's on PATH.
-  Ensure DCGM CLI (dcgmi) is installed and pynvml is available
+GPU telemetry collection started on server (DCGM+NVML, interval=1.0s, output=/scratch/pulakmehrotra/telemetry)
 starting up on localhost port 10002
 Schedule time: 40
 job 81 scheduled on GPU 0, localhost device 0
-Finish time: 1043
-job 81 finished on GPU 0
-Time: 1051, all jobs are finished!
