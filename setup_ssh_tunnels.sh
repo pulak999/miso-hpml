@@ -5,13 +5,47 @@
 
 set -e
 
-# Configuration
-SSH_HOST="${SSH_HOST:-l4vm}"  # Change this to your SSH host alias or use: ssh -i key.pem ubuntu@ip
-REMOTE_IP="${REMOTE_IP:-172.31.40.254}"  # Remote server IP (get from: ssh $SSH_HOST "hostname -I")
-FORWARD_LOCAL_PORT=10003  # Local port for forwarding commands to GPU server
-FORWARD_REMOTE_PORT=10002  # Remote port where GPU server listens
-REVERSE_REMOTE_PORT=10002  # Remote port for reverse tunnel (workloads connect here)
-REVERSE_LOCAL_PORT=10002   # Local port where scheduler listens (must match controller_helper.py)
+# ============================================================
+# Load Configuration
+# ============================================================
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load unified configuration
+# Priority: MISO_CONFIG_PATH env var > script directory > current directory > home directory
+if [ -n "$MISO_CONFIG_PATH" ] && [ -f "$MISO_CONFIG_PATH" ]; then
+    source "$MISO_CONFIG_PATH"
+    echo "Loaded configuration from: $MISO_CONFIG_PATH"
+elif [ -f "$SCRIPT_DIR/miso_config.sh" ]; then
+    source "$SCRIPT_DIR/miso_config.sh"
+    echo "Loaded configuration from: $SCRIPT_DIR/miso_config.sh"
+elif [ -f "./miso_config.sh" ]; then
+    source "./miso_config.sh"
+    echo "Loaded configuration from: ./miso_config.sh"
+elif [ -f "$HOME/.miso_config.sh" ]; then
+    source "$HOME/.miso_config.sh"
+    echo "Loaded configuration from: $HOME/.miso_config.sh"
+else
+    echo "WARNING: miso_config.sh not found. Using defaults."
+    echo "Please create miso_config.sh in the repository root or set MISO_CONFIG_PATH"
+    # Fallback to defaults
+    SSH_HOST="${SSH_HOST:-l4vm}"
+    REMOTE_IP="${REMOTE_IP:-172.31.40.254}"
+    FORWARD_LOCAL_PORT="${FORWARD_TUNNEL_PORT:-10003}"
+    FORWARD_REMOTE_PORT="${REMOTE_GPU_SERVER_PORT:-10002}"
+    REVERSE_REMOTE_PORT="${REVERSE_TUNNEL_REMOTE_PORT:-10002}"
+    REVERSE_LOCAL_PORT="${SCHEDULER_PORT:-10002}"
+fi
+
+# Map unified config variables to script variables (for backward compatibility)
+FORWARD_LOCAL_PORT="${FORWARD_TUNNEL_PORT:-10003}"
+FORWARD_REMOTE_PORT="${REMOTE_GPU_SERVER_PORT:-10002}"
+REVERSE_REMOTE_PORT="${REVERSE_TUNNEL_REMOTE_PORT:-10002}"
+REVERSE_LOCAL_PORT="${SCHEDULER_PORT:-10002}"
+
+# Allow environment variable overrides
+SSH_HOST="${SSH_HOST:-l4vm}"
+REMOTE_IP="${REMOTE_IP:-172.31.40.254}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -222,8 +256,12 @@ main() {
                 echo -e "==========================================${NC}"
                 show_status
                 echo ""
-                echo "You can now run experiments with:"
-                echo "  python run_mps_only.py --gpu_server_host localhost ..."
+            echo "You can now run experiments with:"
+            if [ "$USE_SSH_TUNNEL" = "true" ]; then
+                echo "  python run_mps_only.py --gpu_server_host localhost --gpu_server_port $FORWARD_LOCAL_PORT ..."
+            else
+                echo "  python run_mps_only.py --gpu_server_host $REMOTE_IP --gpu_server_port $FORWARD_REMOTE_PORT ..."
+            fi
             else
                 echo ""
                 echo -e "${RED}=========================================="
@@ -270,9 +308,11 @@ main() {
             echo "  kill   - Kill all SSH tunnels"
             echo "  test   - Test tunnel connections"
             echo ""
-            echo "Environment variables:"
-            echo "  SSH_HOST      - SSH host alias (default: l4vm)"
-            echo "  REMOTE_IP     - Remote server IP (default: 172.31.40.254)"
+            echo "Configuration:"
+            echo "  Config file: miso_config.sh (or set MISO_CONFIG_PATH)"
+            echo "  Environment variables (override config):"
+            echo "    SSH_HOST      - SSH host alias"
+            echo "    REMOTE_IP     - Remote server IP"
             echo ""
             echo "Examples:"
             echo "  $0 setup                    # Set up tunnels with defaults"

@@ -20,9 +20,17 @@ import signal
 from pathlib import Path
 os.chdir(get_path('workloads'))
 
+# Try to load default port from unified config
+try:
+    from load_miso_config import get_config
+    _server_config = get_config()
+    _default_port = _server_config.get('REMOTE_GPU_SERVER_PORT', 10002)
+except ImportError:
+    _default_port = int(os.environ.get('REMOTE_GPU_SERVER_PORT', os.environ.get('GPU_SERVER_PORT', 10002)))
+
 parser = argparse.ArgumentParser(description='TCP server')
 parser.add_argument('--node', metavar='GPU_NODE', type=str, help='specific which node', default=socket.gethostname())
-parser.add_argument('--port', metavar='PORT_NUMBER', type=int, default=10000, help='select which port for communication')
+parser.add_argument('--port', metavar='PORT_NUMBER', type=int, default=_default_port, help='select which port for communication (default from miso_config.sh or 10002)')
 parser.add_argument('--host', metavar='HOST_NODE', type=str, help='scheduler node', default='invalid')
 #parser.add_argument('--tc', type=str, help='testcase', default='test') # miso, full
 

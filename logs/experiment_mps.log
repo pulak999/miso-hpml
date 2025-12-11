@@ -1,4 +1,224 @@
 GPU telemetry collection started on server (DCGM+NVML, interval=1.0s, output=/scratch/pulakmehrotra/telemetry)
 starting up on localhost port 10002
-Schedule time: 41
-job 81 scheduled on GPU 0, localhost device 0
+Schedule time: 40
+job 0 scheduled on GPU 0, localhost device 0
+WARNING: Job 0 scheduled 40s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 40s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 50s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 50s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 60s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 60s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 70s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 70s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 80s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 80s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 90s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 90s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 100s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 100s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 110s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 110s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 120s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 120s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 130s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 130s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 140s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 140s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 150s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 150s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 160s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 160s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 170s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 170s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 180s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 180s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 190s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 190s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 200s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 200s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 210s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 210s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 220s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 220s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 230s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 230s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 240s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 240s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>
+WARNING: Job 0 scheduled 250s ago but no PID received.
+  This usually means the workload cannot connect back to the scheduler.
+  Possible causes:
+    1. Job listener thread is not running (check port 10002)
+    2. Reverse SSH tunnel not set up (workloads need: ssh -R 10002:localhost:10002)
+    3. Workload failed to start on server
+  Check server logs: /scratch/pulakmehrotra/miso_logs/mps/job0_start.err
+WARNING: Job 0 scheduled 250s ago but no PID received. Workload may not be connecting.
+  Check if workload is running on server and can connect to scheduler on port 10002
+  Verify reverse SSH tunnel is set up: ssh -R 10002:localhost:10002 <server>

@@ -34,21 +34,23 @@ from checkpoint_helper import CustomCheckpoint
 
 parser = argparse.ArgumentParser(description='vLLM Continuous Batching Inference')
 parser.add_argument('--job_id', type=str, default='0', help='ID of job from trace')
-parser.add_argument('--model', type=str, default='meta-llama/Llama-2-7b-chat-hf', 
+parser.add_argument('--model', type=str, default='Qwen/Qwen1.5-1.8B', 
                     help='HuggingFace model name or path')
-parser.add_argument('--max_model_len', type=int, default=2048, 
+parser.add_argument('--max_model_len', type=int, default=1024, 
                     help='Maximum sequence length')
 parser.add_argument('--tensor_parallel_size', type=int, default=1, 
                     help='Tensor parallelism (number of GPUs for model sharding)')
+parser.add_argument('--batch_size', type=int, default=8,
+                    help='Requests per batch when inferring')
 parser.add_argument('--max_num_seqs', type=int, default=None, 
-                    help='Maximum number of sequences in a batch (overrides -b if set)')
-parser.add_argument('--max_num_batched_tokens', type=int, default=8192, 
+                    help='Maximum number of sequences in a batch (overrides --batch_size if set)')
+parser.add_argument('--max_num_batched_tokens', type=int, default=2048, 
                     help='Maximum number of tokens in a batch (for admission control)')
 parser.add_argument('--num_requests', type=int, default=100, 
                     help='Number of inference requests to process')
-parser.add_argument('--request_rate', type=float, default=10.0, 
+parser.add_argument('--request_rate', type=float, default=8.0, 
                     help='Requests per second (for arrival simulation)')
-parser.add_argument('--max_tokens', type=int, default=512, 
+parser.add_argument('--max_tokens', type=int, default=128, 
                     help='Maximum tokens to generate per request')
 parser.add_argument('--temperature', type=float, default=0.7, 
                     help='Sampling temperature')
@@ -62,7 +64,7 @@ parser.add_argument('--port', type=int, default=50051,
                     help='Port for gRPC communication')
 parser.add_argument('--mps_sync', action='store_true', default=False, 
                     help='Require MPS sync start')
-parser.add_argument('--iters', type=int, default=200, 
+parser.add_argument('--iters', type=int, default=150, 
                     help='Number of iterations (requests) to process')
 parser.add_argument('--no_ckpt', action='store_true', default=False, 
                     help='Disable checkpointing')
@@ -173,7 +175,7 @@ llm = LLM(
     max_num_seqs=max_num_seqs,
     max_num_batched_tokens=args.max_num_batched_tokens,
     trust_remote_code=True,
-    gpu_memory_utilization=0.9,  # Use 90% of GPU memory
+    gpu_memory_utilization=0.7,  # Safer headroom for smaller GPUs/MIG slices
 )
 
 # Sampling parameters
@@ -292,4 +294,3 @@ finally:
         json.dump(metrics, f, indent=2)
     
     print(f"Metrics saved to {log_dir / f'job{args.job_id}_metrics.json'}")
-

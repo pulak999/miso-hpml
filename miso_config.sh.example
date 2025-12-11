@@ -1,0 +1,90 @@
+#!/bin/bash
+# ============================================================
+# Unified MPS Configuration File - EXAMPLE
+# ============================================================
+# Copy this file to miso_config.sh and customize for your setup
+# ============================================================
+
+# ============================================================
+# Server Connection Configuration
+# ============================================================
+# Change SSH_HOST to switch between different servers
+SSH_HOST="l4vm"  # Change to: "hpmlvm-hw1", "gpu-server", etc.
+
+REMOTE_IP="172.31.40.254"  # Get from: ssh $SSH_HOST "hostname -I"
+USE_SSH_TUNNEL=true
+
+# ============================================================
+# Port Configuration
+# ============================================================
+REMOTE_GPU_SERVER_PORT=10002
+FORWARD_TUNNEL_PORT=10003
+SCHEDULER_PORT=10002
+REVERSE_TUNNEL_REMOTE_PORT=10002
+
+# ============================================================
+# Repository Configuration
+# ============================================================
+REPO_URL="https://github.com/pulak999/miso-hpml.git"
+CLIENT_REPO_ROOT="${MISO_REPO_ROOT:-~/Desktop/Columbia/Courses/Fall25/HPML/socc22-miso}"
+SERVER_REPO_ROOT="${MISO_REPO_ROOT:-/home/ubuntu/GIT/socc22-miso}"
+SERVER_RESULTS_BASE="/insomnia001/home/pm3371/mps_experiments"
+
+# ============================================================
+# Client Environment (macOS)
+# ============================================================
+CLIENT_CONDA_ENV="miso_client"
+CLIENT_CONDA_PATHS=(
+    "$HOME/miniconda3/etc/profile.d/conda.sh"
+    "$HOME/anaconda3/etc/profile.d/conda.sh"
+)
+
+# ============================================================
+# Server Environment (Ubuntu/GPU Server)
+# ============================================================
+SERVER_CONDA_ENV="tf2"
+SERVER_MODULE_SYSTEM="anaconda"  # or "" for no modules
+SERVER_CONDA_PATHS=(
+    "$HOME/miniconda3/etc/profile.d/conda.sh"
+    "$HOME/anaconda3/etc/profile.d/conda.sh"
+)
+
+# ============================================================
+# GPU Server Configuration
+# ============================================================
+NUM_GPU=1
+GPU_SERVER_HOST="localhost"
+
+# ============================================================
+# Directory Configuration
+# ============================================================
+SCRATCH_BASE="/scratch"
+TMP_BASE="/tmp"
+MPS_LOG_DIR="/tmp/mps_log"
+
+# ============================================================
+# Experiment Parameters
+# ============================================================
+ARRIVAL=${ARRIVAL:-100}
+NUM_JOB=${NUM_JOB:-30}
+SEED=${SEED:-42}
+COLLECT_TELEMETRY=${COLLECT_TELEMETRY:-true}
+TELEMETRY_INTERVAL=${TELEMETRY_INTERVAL:-1.0}
+
+# ============================================================
+# Server Settings
+# ============================================================
+GPU_SERVER_MAX_WAIT=30
+UPDATE_REPO=true
+
+# Export all
+export SSH_HOST REMOTE_IP USE_SSH_TUNNEL
+export REMOTE_GPU_SERVER_PORT FORWARD_TUNNEL_PORT SCHEDULER_PORT REVERSE_TUNNEL_REMOTE_PORT
+export REPO_URL CLIENT_REPO_ROOT SERVER_REPO_ROOT SERVER_RESULTS_BASE
+export CLIENT_CONDA_ENV SERVER_CONDA_ENV SERVER_MODULE_SYSTEM
+export NUM_GPU GPU_SERVER_HOST
+export SCRATCH_BASE TMP_BASE MPS_LOG_DIR
+export ARRIVAL NUM_JOB SEED COLLECT_TELEMETRY TELEMETRY_INTERVAL
+export GPU_SERVER_MAX_WAIT UPDATE_REPO
+export CLIENT_CONDA_PATHS SERVER_CONDA_PATHS
+

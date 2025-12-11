@@ -1,0 +1,67 @@
+{
+  "experiment_name": "T4 Resource Cap Sweep",
+  "description": "Phase T4 experiments: Resource cap sweep (policy × mps_level) with adversarial ordering",
+  "phase": "T4",
+  "experiment_plan_reference": "Phase T4 — Resource cap sweep (policy × mps_level)",
+  
+  "parameters": {
+    "arrival": 100,
+    "num_job": 30,
+    "num_gpu": 1,
+    "seed": 42,
+    "step": 10,
+    "max_tenants": 3,
+    "ordering": "adversarial",
+    "ordering_description": "Largest first → smallest last (same as Phase T3)"
+  },
+  
+  "mps_levels": [25, 33, 50, 100],
+  "mps_level_descriptions": {
+    "25": "25% of GPU resources per job (4 jobs can share)",
+    "33": "33% of GPU resources per job (3 jobs can share)",
+    "50": "50% of GPU resources per job (2 jobs can share)",
+    "100": "100% of GPU resources per job (1 job at a time, effectively isolated)"
+  },
+  
+  "gpu_server": {
+    "host": "localhost",
+    "port": 10003,
+    "description": "Use localhost with SSH tunnel, or set to actual server IP"
+  },
+  
+  "telemetry": {
+    "enabled": false,
+    "interval": 1.0,
+    "description": "GPU telemetry collection using DCGM+NVML"
+  },
+  
+  "wandb": {
+    "enabled": false,
+    "project": "t4-mps-sweep",
+    "entity": null,
+    "tags": ["t4", "resource-cap", "adversarial", "mps-sweep"]
+  },
+  
+  "expected_insights": [
+    "Lower MPS levels (25, 33): Higher throughput but potential fairness issues",
+    "Higher MPS levels (50, 100): Better fairness but lower overall throughput",
+    "Optimal trade-off: Identify the MPS level that balances fairness and throughput"
+  ],
+  
+  "metrics_to_analyze": [
+    "JCT (Job Completion Time)",
+    "JRT (Job Running Time)",
+    "QT (Queue Time)",
+    "Makespan",
+    "Fairness (JCT variance, max/min JCT ratio)",
+    "Throughput (jobs/second)",
+    "Resource utilization (active jobs per GPU over time)"
+  ],
+  
+  "related_experiments": {
+    "T0": "MPS isolated baseline",
+    "T1": "Default (random arrival) baseline",
+    "T2": "Scheduling policy sweep",
+    "T3": "Adversarial ordering stress test (predecessor to T4)"
+  }
+}

@@ -130,12 +130,51 @@ class MPS(Experiment):
             real_node, real_gpu = self.GPU_LUT(gpuid)
             mps_start(real_node, job, real_gpu, level=mps_lvl, port=self.gpu_server_port)
             self.job_exe[job] = (gpuid, 0)
-            print(f'Schedule time: {int(time.time()-self.start_time)}', file=run_log, flush=True)
-            print(f'job {job} scheduled on GPU {gpu.index}, {real_node} device {real_gpu}', file=run_log, flush=True)
+            schedule_msg = f'Schedule time: {int(time.time()-self.start_time)}, job {job} scheduled on GPU {gpu.index}, {real_node} device {real_gpu}'
+            print(schedule_msg, file=run_log, flush=True)
+            print(schedule_msg, flush=True)  # Also print to stdout for immediate visibility
         return sched_done            
 
     def run(self, args, mps_lvl=33): 
         run_log = open('logs/experiment_mps.log','w')
+        
+        # Initialize wandb if enabled
+        wandb_run = None
+        if hasattr(args, 'use_wandb') and args.use_wandb:
+            try:
+                import wandb
+                # Generate run name if not provided
+                run_name = args.wandb_run_name
+                if not run_name:
+                    run_name = f"mps_lvl{mps_lvl}_jobs{args.num_job}_gpus{args.num_gpu}_seed{args.seed}"
+                
+                # Initialize wandb
+                wandb.init(
+                    project=getattr(args, 'wandb_project', 'mps-experiments'),
+                    entity=getattr(args, 'wandb_entity', None),
+                    name=run_name,
+                    tags=getattr(args, 'wandb_tags', []),
+                    config={
+                        'mps_level': mps_lvl,
+                        'num_job': args.num_job,
+                        'num_gpu': args.num_gpu,
+                        'arrival': args.arrival,
+                        'seed': args.seed,
+                        'step': args.step,
+                        'max_tenants': self.max_tenants,
+                        'filler': getattr(args, 'filler', False),
+                        'flat_arrival': getattr(args, 'flat_arrival', False),
+                        'random_trace': getattr(args, 'random_trace', False),
+                        'collect_telemetry': getattr(args, 'collect_telemetry', False),
+                        'telemetry_interval': getattr(args, 'telemetry_interval', 1.0),
+                    }
+                )
+                wandb_run = wandb
+                print(f'W&B logging enabled: project={wandb_run.config.get("_wandb", {}).get("project")}, run={run_name}', file=run_log, flush=True)
+            except ImportError:
+                print('Warning: wandb not installed. Install with: pip install wandb', file=run_log, flush=True)
+            except Exception as e:
+                print(f'Warning: Failed to initialize wandb: {e}', file=run_log, flush=True)
 
         ####### start GPU telemetry collection on server (DCGM + NVML) ##########
         self.telemetry_enabled = False
@@ -224,11 +263,51 @@ class MPS(Experiment):
             ############### wait for next iteration, job is running ##########
         
             self.emptied_gpu = {}
-            time.sleep(args.step)            
+            time.sleep(args.step)
+            
+            # Diagnostic: Check if jobs are stuck (no PID received after reasonable time)
+            stuck_jobs = []
+            for job in list(self.job_exe.keys()):
+                if self.job_exe[job][0] is not None:  # Job is scheduled
+                    if self.pid_dict.get(job, 0) == 0:  # No PID received yet
+                        time_since_scheduled = int(time.time()) - self.sched_time.get(job, self.start_time)
+                        if time_since_scheduled > 30:  # 30 seconds without PID
+                            stuck_jobs.append((job, time_since_scheduled))
+                            # Print to BOTH log file AND stdout so user sees it immediately
+                            warning_msg = (
+                                f'\n⚠️  WARNING: Job {job} scheduled {time_since_scheduled}s ago but no PID received!\n'
+                                f'   This usually means the workload cannot connect back to the scheduler.\n'
+                                f'   Possible causes:\n'
+                                f'     1. Job listener thread is not running (check port {self.gpu_server_port})\n'
+                                f'     2. Reverse SSH tunnel not set up (workloads need: ssh -R {self.gpu_server_port}:localhost:{self.gpu_server_port} <server>)\n'
+                                f'     3. Workload failed to start on server\n'
+                                f'   Check server logs: /scratch/{user}/miso_logs/mps/job{job}_start.err\n'
+                            )
+                            print(warning_msg, file=run_log, flush=True)
+                            print(warning_msg, flush=True)  # Also print to stdout
+            
+            # If jobs are stuck, provide immediate actionable feedback
+            if stuck_jobs:
+                print(f'\n🔴 STUCK JOBS DETECTED: {len(stuck_jobs)} job(s) waiting for PID:', flush=True)
+                for job, wait_time in stuck_jobs:
+                    print(f'   - Job {job}: waiting {wait_time}s for PID', flush=True)
+                print(f'\n💡 QUICK FIXES:', flush=True)
+                print(f'   1. Check if listener is running: lsof -i :{self.gpu_server_port}', flush=True)
+                print(f'   2. Check server logs: ssh <server> "tail -f /scratch/{user}/miso_logs/mps/job{stuck_jobs[0][0]}_start.err"', flush=True)
+                print(f'   3. Verify reverse tunnel: ssh -R {self.gpu_server_port}:localhost:{self.gpu_server_port} <server>', flush=True)
+                print(f'   4. Check experiment log: tail -f logs/experiment_mps.log\n', flush=True)            
 
             if int(time.time() - progress_time) >= 60:
                 progress[int(time.time() - self.start_time)] = sum(list(self.completion.values()))
                 progress_time = int(time.time())
+                # Log progress to wandb
+                if wandb_run:
+                    wandb_run.log({
+                        'progress/completed_jobs': sum(list(self.completion.values())),
+                        'progress/total_jobs': len(self.completion),
+                        'progress/completion_rate': sum(list(self.completion.values())) / len(self.completion) if len(self.completion) > 0 else 0,
+                        'time/elapsed_seconds': int(time.time() - self.start_time),
+                    }, step=int(time.time() - self.start_time))
              
             curr_time = int(time.time())
             emptied_list = []
@@ -250,6 +329,15 @@ class MPS(Experiment):
             for gpu in self.gpu_states:
                 cnt_active += len(gpu.active_jobs)
             active_jobs_per_gpu.append(cnt_active / args.num_gpu)
+            
+            # Log active jobs to wandb
+            if wandb_run:
+                wandb_run.log({
+                    'gpu/active_jobs_per_gpu': cnt_active / args.num_gpu,
+                    'gpu/total_active_jobs': cnt_active,
+                    'gpu/total_gpus': args.num_gpu,
+                    'time/elapsed_seconds': int(time.time() - self.start_time),
+                }, step=int(time.time() - self.start_time))
        
             # MPS jobs cannot calculate overall rate like this
             # self.overall_rate.append(sum([self.get_rate(gpu) for gpu in self.gpu_states]))
@@ -271,6 +359,11 @@ class MPS(Experiment):
                 print(f'  Finished jobs: {sum(self.finish.values())}/{len(self.finish)}', file=run_log, flush=True)
                 print(f'  Queue index: {queue_ind}/{args.num_job}', file=run_log, flush=True)
                 print(f'  Arrived jobs waiting: {len(arrived_jobs)}', file=run_log, flush=True)
+                # Check for stuck jobs
+                stuck_jobs = [j for j in self.job_exe.keys() if self.pid_dict.get(j, 0) == 0 and self.job_exe[j][0] is not None]
+                if stuck_jobs:
+                    print(f'  Stuck jobs (no PID received): {stuck_jobs}', file=run_log, flush=True)
+                    print(f'    These jobs may not be able to connect back to scheduler.', file=run_log, flush=True)
                 # Break instead of pdb to allow cleanup
                 break
        
@@ -303,6 +396,71 @@ class MPS(Experiment):
             json.dump(self.ckpt_ovhd, f, indent=4)
         with open('logs/mps/overall_rate.json', 'w') as f:
             json.dump(self.overall_rate, f, indent=4)
+        
+        # Log final metrics to wandb
+        if wandb_run:
+            # Log summary statistics
+            wandb_run.log({
+                'metrics/jct_mean': JCT['average'],
+                'metrics/jct_std': np.std([v for k, v in JCT.items() if k != 'average']),
+                'metrics/jrt_mean': JRT['average'],
+                'metrics/jrt_std': np.std([v for k, v in JRT.items() if k != 'average']),
+                'metrics/qt_mean': QT['average'],
+                'metrics/qt_std': np.std([v for k, v in QT.items() if k != 'average']),
+                'metrics/migration_mean': migration['average'],
+                'metrics/migration_total': sum([v for k, v in migration.items() if k != 'average']),
+                'metrics/makespan_seconds': self.span_time,
+                'metrics/total_jobs': len(self.job_runtime),
+                'metrics/completed_jobs': sum(list(self.completion.values())),
+            })
+            
+            # Log time-series data as wandb tables
+            try:
+                # Active jobs per GPU time series
+                import pandas as pd
+                active_jobs_df = pd.DataFrame({
+                    'step': range(len(active_jobs_per_gpu)),
+                    'active_jobs_per_gpu': active_jobs_per_gpu
+                })
+                wandb_run.log({'active_jobs_per_gpu_table': wandb.Table(dataframe=active_jobs_df)})
+                
+                # Progress time series
+                if progress:
+                    progress_df = pd.DataFrame({
+                        'time_seconds': list(progress.keys()),
+                        'completed_jobs': list(progress.values())
+                    })
+                    wandb_run.log({'progress_table': wandb.Table(dataframe=progress_df)})
+                
+                # Per-job metrics
+                jobs_df = pd.DataFrame({
+                    'job_id': [k for k in JCT.keys() if k != 'average'],
+                    'jct': [JCT[k] for k in JCT.keys() if k != 'average'],
+                    'jrt': [JRT[k] for k in JRT.keys() if k != 'average'],
+                    'qt': [QT[k] for k in QT.keys() if k != 'average'],
+                    'migration': [migration[k] for k in migration.keys() if k != 'average'],
+                })
+                wandb_run.log({'per_job_metrics': wandb.Table(dataframe=jobs_df)})
+            except ImportError:
+                print('Warning: pandas not available, skipping wandb table logging', file=run_log, flush=True)
+            
+            # Log histograms
+            try:
+                jct_values = [v for k, v in JCT.items() if k != 'average']
+                jrt_values = [v for k, v in JRT.items() if k != 'average']
+                qt_values = [v for k, v in QT.items() if k != 'average']
+                
+                wandb_run.log({
+                    'histograms/jct': wandb.Histogram(jct_values),
+                    'histograms/jrt': wandb.Histogram(jrt_values),
+                    'histograms/qt': wandb.Histogram(qt_values),
+                })
+            except Exception as e:
+                print(f'Warning: Failed to log histograms to wandb: {e}', file=run_log, flush=True)
+            
+            # Finish wandb run
+            wandb_run.finish()
+            print('W&B logging completed', file=run_log, flush=True)
 
         self.term_thread()
         stop_event.set()
