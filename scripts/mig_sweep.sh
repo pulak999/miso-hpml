@@ -1,8 +1,6 @@
 #!/bin/bash
 
-# TODO: 1. reconfigure mig instances 2. set CUDA_VISIBLE...
-
-MIG_MODE="v100"
+MIG_MODE="a100"
 MODEL_LIST=("resnet"  "bert"  "deepspeech2"  "transformer"  "gnn"  "embedding")
 
 cd models
